@@ -2,14 +2,13 @@ import io
 import logging
 import os
 import random
-import re
 import sys
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-import requests
-from dotenv import load_dotenv
-from PIL import Image, ImageTk
+import requests  # type: ignore[import]
+from dotenv import load_dotenv  # type: ignore[import]
+from PIL import Image, ImageTk  # type: ignore[import]
 import tkinter as tk
 
 
@@ -20,11 +19,11 @@ logger = logging.getLogger(__name__)
 class Settings:
     jellyfin_url: str
     api_token: str
-    user_id: Optional[str]
     refresh_seconds: int
     background_color: str
-    window_title: str
     fullscreen: bool
+    fade_speed: int  # 1 (slowest) to 10 (fastest)
+    selected_movies: List[str]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,7 +31,6 @@ class Settings:
 
         jellyfin_url = os.getenv("JELLYFIN_URL", "").strip().rstrip("/")
         api_token = os.getenv("JELLYFIN_API_TOKEN", "").strip()
-        user_id = os.getenv("JELLYFIN_USER_ID", "").strip() or None
 
         if not jellyfin_url:
             raise ValueError("JELLYFIN_URL is required")
@@ -41,36 +39,36 @@ class Settings:
 
         refresh_seconds = int(os.getenv("REFRESH_SECONDS", "30"))
         background_color = os.getenv("BACKGROUND_COLOR", "black")
-        window_title = os.getenv("WINDOW_TITLE", "Jellyfin Poster Display")
         fullscreen = os.getenv("FULLSCREEN", "true").strip().lower() in {
             "1",
             "true",
             "yes",
             "on",
         }
+        fade_speed = max(1, min(10, int(os.getenv("FADE_SPEED", "5"))))
+        selected_movies = [
+            title.strip()
+            for title in os.getenv("SELECT_MOVIES", "").split(",")
+            if title.strip()
+        ]
 
         return cls(
             jellyfin_url=jellyfin_url,
             api_token=api_token,
-            user_id=user_id,
             refresh_seconds=refresh_seconds,
             background_color=background_color,
-            window_title=window_title,
             fullscreen=fullscreen,
+            fade_speed=fade_speed,
+            selected_movies=selected_movies,
         )
 
 
 class JellyfinClient:
     def __init__(self, settings: Settings) -> None:
         self.base_url = settings.jellyfin_url
-        self.user_id = settings.user_id
+        self.user_id: Optional[str] = None
         self.session = requests.Session()
         self.session.headers.update({"X-Emby-Token": settings.api_token})
-
-    @staticmethod
-    def _looks_like_jellyfin_id(value: str) -> bool:
-        # Jellyfin IDs are typically hex strings (sometimes UUID-like with dashes).
-        return bool(re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F-]{36}", value))
 
     @staticmethod
     def _response_preview(response: requests.Response) -> str:
@@ -89,38 +87,34 @@ class JellyfinClient:
             ) from exc
         return response
 
-    def _resolve_user_name_to_id(self, user_name: str) -> Optional[str]:
-        url = f"{self.base_url}/Users"
-        response = self._get(url, timeout=10)
-        users = response.json()
-        for user in users:
-            if str(user.get("Name", "")).lower() == user_name.lower() and user.get("Id"):
-                return user["Id"]
-        return None
-
     def resolve_user_id(self) -> str:
         if self.user_id:
-            if not self._looks_like_jellyfin_id(self.user_id):
-                resolved_from_name = self._resolve_user_name_to_id(self.user_id)
-                if not resolved_from_name:
-                    raise ValueError(
-                        "JELLYFIN_USER_ID is not a valid user Id and did not match any username. "
-                        "Set it to a valid Id, a valid username, or leave it blank for /Users/Me."
-                    )
-                self.user_id = resolved_from_name
             return self.user_id
 
-        url = f"{self.base_url}/Users/Me"
-        response = self._get(url, timeout=10)
-        payload = response.json()
-        resolved = payload.get("Id")
-        if not resolved:
-            raise RuntimeError("Unable to resolve user id from /Users/Me")
+        # /Users/Me works with session tokens; API keys need /Users list.
+        try:
+            response = self._get(f"{self.base_url}/Users/Me", timeout=10)
+            resolved = response.json().get("Id")
+            if resolved:
+                self.user_id = resolved
+                return resolved
+        except RuntimeError:
+            pass
 
+        users = self._get(f"{self.base_url}/Users", timeout=10).json()
+        resolved = next((u["Id"] for u in users if u.get("Id")), None)
+        if not resolved:
+            raise RuntimeError("Could not resolve a Jellyfin user id.")
         self.user_id = resolved
         return resolved
 
-    def get_random_poster_image(self, max_width: int, max_height: int, last_item_id: Optional[str] = None):
+    def get_random_poster_image(
+        self,
+        max_width: int,
+        max_height: int,
+        last_item_id: Optional[str] = None,
+        selected_movies: Optional[List[str]] = None,
+    ):
         user_id = self.resolve_user_id()
 
         items_url = f"{self.base_url}/Users/{user_id}/Items"
@@ -138,6 +132,19 @@ class JellyfinClient:
 
         if not items:
             raise RuntimeError("No movies with posters were found in Jellyfin")
+
+        if selected_movies:
+            wanted_titles = {title.casefold() for title in selected_movies}
+            filtered_items = [
+                item
+                for item in items
+                if str(item.get("Name", "")).strip().casefold() in wanted_titles
+            ]
+            if not filtered_items:
+                raise RuntimeError(
+                    "SELECT_MOVIES is set, but none of those movie titles were found with posters."
+                )
+            items = filtered_items
 
         # Avoid showing the same poster twice in a row when possible.
         candidates = [item for item in items if item.get("Id") != last_item_id] or items
@@ -186,14 +193,27 @@ class JellyfinClient:
 
 
 class PosterDisplayApp:
+    # Crossfade tuning: macOS timer resolution floors at ~15 ms per frame, so
+    # reducing FADE_INTERVAL_MS alone won't speed things up past a point.
+    # Both FADE_STEPS and FADE_INTERVAL_MS scale down with higher speeds so
+    # the total frame count (and thus wall time) genuinely shrinks:
+    #   speed 1  → 30 steps × 200 ms = ~6 s
+    #   speed 5  → 16 steps × 30 ms  = ~0.5 s
+    #   speed 10 → 4 steps  × 15 ms  = ~0.06 s (nearly instant)
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        s = settings.fade_speed  # 1–10
+        # Steps: 30 at speed 1, down to 4 at speed 10 (fewer frames = faster)
+        self.FADE_STEPS = max(4, 32 - s * 3)
+        # Interval: 200 ms at speed 1, 15 ms at speed 10 (OS timer floor ~15 ms)
+        self.FADE_INTERVAL_MS = max(15, 215 - s * 20)
         self.client = JellyfinClient(settings)
         self.last_item_id: Optional[str] = None
         self.active_rotation_index = 0
+        self._current_canvas: Optional[Image.Image] = None
 
         self.root = tk.Tk()
-        self.root.title(settings.window_title)
         self.root.configure(bg=settings.background_color)
         self.root.bind("<Escape>", lambda _event: self.exit_app())
 
@@ -228,6 +248,29 @@ class PosterDisplayApp:
 
         self._tk_image = None
 
+    def _on_black_canvas(self, image: Image.Image) -> Image.Image:
+        """Paste *image* centred on a full-screen black canvas."""
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        canvas = Image.new("RGB", (screen_w, screen_h), "black")
+        x = (screen_w - image.width) // 2
+        y = (screen_h - image.height) // 2
+        canvas.paste(image, (x, y))
+        return canvas
+
+    def _do_fade(self, old: Image.Image, new: Image.Image, step: int, on_done) -> None:
+        alpha = step / self.FADE_STEPS
+        frame = Image.blend(old, new, alpha)
+        self._tk_image = ImageTk.PhotoImage(frame)
+        self.label.configure(image=self._tk_image)
+        if step < self.FADE_STEPS:
+            self.root.after(
+                self.FADE_INTERVAL_MS,
+                lambda: self._do_fade(old, new, step + 1, on_done),
+            )
+        else:
+            on_done()
+
     def exit_app(self) -> None:
         self.root.destroy()
 
@@ -252,6 +295,9 @@ class PosterDisplayApp:
             self.banner_visible = False
 
     def refresh_once(self) -> None:
+        def schedule_next() -> None:
+            self.root.after(self.settings.refresh_seconds * 1000, self.refresh_once)
+
         try:
             screen_w = self.root.winfo_screenwidth()
             screen_h = self.root.winfo_screenheight()
@@ -276,21 +322,28 @@ class PosterDisplayApp:
                     max_width=screen_w,
                     max_height=screen_h,
                     last_item_id=self.last_item_id,
+                    selected_movies=self.settings.selected_movies,
                 )
-                status_text = f"No active movie sessions. Random poster: {title}"
+                if self.settings.selected_movies:
+                    status_text = f"No active sessions. Selected-movie poster: {title}"
+                else:
+                    status_text = f"No active movie sessions. Random poster: {title}"
                 self._hide_top_banner()
                 logger.info("random movie poster grabbed: %s", title)
 
             fitted = self._fit_to_screen(image)
-            self._tk_image = ImageTk.PhotoImage(fitted)
-            self.label.configure(image=self._tk_image)
+            new_canvas = self._on_black_canvas(fitted)
+            old_canvas = self._current_canvas or Image.new("RGB", new_canvas.size, "black")
+            self._current_canvas = new_canvas
             self.status.configure(text=status_text)
             self.last_item_id = item_id
+            self._do_fade(old_canvas, new_canvas, 1, schedule_next)
+            return
         except Exception as exc:
             logger.exception("Poll failed: %s", exc)
             self.status.configure(text=f"Error: {exc}")
 
-        self.root.after(self.settings.refresh_seconds * 1000, self.refresh_once)
+        schedule_next()
 
     def run(self) -> None:
         self.refresh_once()
