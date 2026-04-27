@@ -278,7 +278,14 @@ class PosterDisplayApp:
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
 
+        # Keep poster long axis aligned with the screen's long axis.
+        screen_long_horizontal = screen_w >= screen_h
         img_w, img_h = image.size
+        image_long_horizontal = img_w >= img_h
+        if image_long_horizontal != screen_long_horizontal:
+            image = image.rotate(90, expand=True)
+            img_w, img_h = image.size
+
         scale = min(screen_w / img_w, screen_h / img_h)
         new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
         return image.resize(new_size, Image.Resampling.LANCZOS)
