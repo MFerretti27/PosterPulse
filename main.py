@@ -68,7 +68,15 @@ class JellyfinClient:
         self.base_url = settings.jellyfin_url
         self.user_id: Optional[str] = None
         self.session = requests.Session()
-        self.session.headers.update({"X-Emby-Token": settings.api_token})
+        self.session.headers.update(
+            {
+                "Authorization": (
+                    'MediaBrowser Client="PosterPulse", Device="Poster Display", '
+                    'DeviceId="poster-pulse", Version="1.0", '
+                    f'Token="{settings.api_token}"'
+                )
+            }
+        )
 
     @staticmethod
     def _response_preview(response: requests.Response) -> str:
