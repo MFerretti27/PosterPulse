@@ -2,7 +2,7 @@ import logging
 import signal
 import time
 from typing import Callable, Optional
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont # pyright: ignore[reportMissingImports]
 
 from displays.base import BaseDisplay, PosterDisplayItem
 from displays.waveshare import epd7in3e, epdconfig

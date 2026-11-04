@@ -30,7 +30,7 @@ class Settings:
     eink_width: int = 800
     eink_height: int = 480
     eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
-    eink_idle_refresh_minutes: int = 15
+    eink_idle_refresh_minutes: int = 30
     eink_preview_path: Optional[str] = "eink_preview.png"
     eink_pwr_pin: int = 27  # BCM 27 on Waveshare PhotoPainter PCB
 
@@ -70,7 +70,7 @@ class Settings:
         eink_width = int(os.getenv("EINK_WIDTH", "800"))
         eink_height = int(os.getenv("EINK_HEIGHT", "480"))
         eink_rotation = int(os.getenv("EINK_ROTATION", "0"))
-        eink_idle_refresh_minutes = int(os.getenv("EINK_IDLE_REFRESH_MINUTES", "15"))
+        eink_idle_refresh_minutes = int(os.getenv("EINK_IDLE_REFRESH_MINUTES", "30"))
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
         eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
         eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))

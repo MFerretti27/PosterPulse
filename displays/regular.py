@@ -1,6 +1,6 @@
 import logging
 from typing import Callable, Optional
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk # pyright: ignore[reportMissingImports]
 import tkinter as tk
 
 from displays.base import BaseDisplay, PosterDisplayItem
