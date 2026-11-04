@@ -84,7 +84,7 @@ class RaspberryPi:
             self._gpiozero_devs[self.busy_pin] = gpiozero.Button(
                 self.busy_pin, pull_up=None, active_state=True
             )
-        except (ImportError, Exception):
+        except Exception:  # noqa: BLE001 - try alternate GPIO backend on any init failure
             try:
                 import RPi.GPIO as GPIO  # type: ignore[import]
 
@@ -97,7 +97,7 @@ class RaspberryPi:
                 self._gpio.setup(self.cs_pin, self._gpio.OUT)
                 self._gpio.setup(self.pwr_pin, self._gpio.OUT)
                 self._gpio.setup(self.busy_pin, self._gpio.IN)
-            except (ImportError, Exception) as exc:
+            except Exception as exc:  # noqa: BLE001 - fall back when GPIO init fails
                 logger.warning(
                     "GPIO library not available (gpiozero / RPi.GPIO): %s. Falling back to mock.",
                     exc,
@@ -111,7 +111,7 @@ class RaspberryPi:
             self.spi = spidev.SpiDev(0, 0)
             self.spi.max_speed_hz = 4000000
             self.spi.mode = 0b00
-        except (ImportError, Exception) as exc:
+        except Exception as exc:  # noqa: BLE001 - SPI is optional outside the Pi
             logger.warning("spidev not available: %s. Falling back to mock SPI.", exc)
             self.spi = None
 
@@ -126,8 +126,8 @@ class RaspberryPi:
         if self.spi is not None:
             try:
                 self.spi.close()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - continue cleanup after close failure
+                logger.warning("Could not close SPI device", exc_info=True)
 
         if self.gpio_lib == "RPi.GPIO" and self._gpio is not None:
             self._gpio.output(self.rst_pin, 0)
@@ -139,8 +139,8 @@ class RaspberryPi:
             for dev in self._gpiozero_devs.values():
                 try:
                     dev.close()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - close remaining GPIO devices
+                    logger.warning("Could not close GPIO device", exc_info=True)
             self._gpiozero_devs.clear()
 
         self.spi = None

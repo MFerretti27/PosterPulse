@@ -69,7 +69,7 @@ class EInkDisplay(BaseDisplay):
                     "Rendered frames will be saved to '%s'.",
                     self.preview_path,
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - hardware drivers vary by platform
             logger.warning(
                 "Failed to initialize e-Paper hardware (%s). Operating in preview mode.",
                 exc,
@@ -114,7 +114,7 @@ class EInkDisplay(BaseDisplay):
             label_text = "CONNECTION LOST" if item.connection_lost else "NOW PLAYING"
             try:
                 font = ImageFont.load_default(size=24)
-            except Exception:
+            except TypeError:
                 font = ImageFont.load_default()
 
             text_bounds = draw.textbbox((0, 0), label_text, font=font)
@@ -156,7 +156,7 @@ class EInkDisplay(BaseDisplay):
                 preview_rgb = quantized.convert("RGB")
                 preview_rgb.save(self.preview_path)
                 logger.info("Saved e-Paper preview image to: %s", self.preview_path)
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 logger.warning("Could not save preview image: %s", exc)
 
         # Output to physical e-Paper display if hardware is present
@@ -167,8 +167,8 @@ class EInkDisplay(BaseDisplay):
                 self.epd.display(prepared)
                 logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
-            except Exception as exc:
-                logger.exception("Hardware e-Paper update failed: %s", exc)
+            except Exception:  # noqa: BLE001 - contain vendor-driver failures
+                logger.exception("Hardware e-Paper update failed")
 
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
@@ -254,8 +254,8 @@ class EInkDisplay(BaseDisplay):
                 elif recovered and self.last_good_item is not None:
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
-            except Exception as exc:
-                logger.exception("Error in e-ink loop: %s", exc)
+            except Exception:  # noqa: BLE001 - keep the polling loop alive
+                logger.exception("Error in e-ink loop")
                 if not self.connection_lost:
                     self.connection_lost = True
                     previous = self.last_good_item
@@ -286,7 +286,7 @@ class EInkDisplay(BaseDisplay):
         if self.is_hardware_available and self.epd is not None:
             try:
                 self.epd.sleep()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - best-effort hardware shutdown
+                logger.warning("Could not put e-Paper display into sleep", exc_info=True)
         epdconfig.implementation.module_exit(cleanup_power=True)
         logger.info("e-Ink display shutdown complete.")

@@ -205,10 +205,8 @@ class EPD:
 
         # Pack two 4-bit pixels into each byte: (pixel0 << 4) | pixel1
         buf: List[int] = [0x00] * int(self.width * self.height / 2)
-        idx = 0
-        for i in range(0, len(buf_raw), 2):
+        for idx, i in enumerate(range(0, len(buf_raw), 2)):
             buf[idx] = (buf_raw[i] << 4) + buf_raw[i + 1]
-            idx += 1
 
         return buf
 

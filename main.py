@@ -525,7 +525,7 @@ class PosterCoordinator:
     def _cache_item(self, item: PosterDisplayItem) -> None:
         try:
             self.poster_cache.add(item)
-        except Exception as exc:
+        except OSError as exc:
             logger.warning("Could not cache poster '%s': %s", item.title, exc)
 
 
@@ -537,7 +537,7 @@ def main() -> int:
 
     try:
         settings = Settings.from_env()
-    except Exception as exc:
+    except ValueError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 

@@ -236,8 +236,8 @@ class RegularDisplay(BaseDisplay):
             self._fade_in_progress = True
             self._do_fade(old_canvas, new_canvas, 1, schedule_next)
             return
-        except Exception as exc:
-            logger.exception("Poll failed: %s", exc)
+        except Exception:
+            logger.exception("Poll failed")
             self._connection_lost = True
             self._set_banner_text("Connection Lost")
             self._show_top_banner()
