@@ -378,7 +378,7 @@ class JellyfinClient:
             if not item_id:
                 continue
 
-            if self.genres and not self._matches_genres(genre_item, item_id):
+            if not self._matches_genres(genre_item, item_id):
                 continue
 
             active_movies.append(
