@@ -275,7 +275,7 @@ ensure_env_var "EINK_WIDTH" "800"
 ensure_env_var "EINK_HEIGHT" "480"
 ensure_env_var "EINK_PWR_PIN" "27"
 ensure_env_var "REFRESH_SECONDS" "15"
-ensure_env_var "EINK_IDLE_REFRESH_MINUTES" "30"
+ensure_env_var "IDLE_REFRESH_MINUTES" "30"
 
 chown "${CURRENT_USER}:${CURRENT_USER}" "${ENV_FILE}"
 

@@ -23,14 +23,14 @@ class Settings:
     refresh_seconds: int = 30
     background_color: str = "black"
     fullscreen: bool = True
-    fade_speed: int = 5  # 1 (slowest) to 10 (fastest)
+    fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     selected_movies: List[str] = field(default_factory=list)
+    idle_refresh_minutes: int = 30
 
     # E-Ink specific settings (optimized for Waveshare 7.3" PhotoPainter)
     eink_width: int = 800
     eink_height: int = 480
     eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
-    eink_idle_refresh_minutes: int = 30
     eink_preview_path: Optional[str] = "eink_preview.png"
     eink_pwr_pin: int = 27  # BCM 27 on Waveshare PhotoPainter PCB
 
@@ -60,7 +60,7 @@ class Settings:
             "yes",
             "on",
         }
-        fade_speed = max(1, min(10, int(os.getenv("FADE_SPEED", "5"))))
+        fade_speed = max(1, min(10, int(os.getenv("FADE_SPEED", "8"))))
         selected_movies = [
             title.strip()
             for title in os.getenv("SELECT_MOVIES", "").split(",")
@@ -70,7 +70,12 @@ class Settings:
         eink_width = int(os.getenv("EINK_WIDTH", "800"))
         eink_height = int(os.getenv("EINK_HEIGHT", "480"))
         eink_rotation = int(os.getenv("EINK_ROTATION", "0"))
-        eink_idle_refresh_minutes = int(os.getenv("EINK_IDLE_REFRESH_MINUTES", "30"))
+        idle_refresh_minutes = int(
+            os.getenv(
+                "IDLE_REFRESH_MINUTES",
+                os.getenv("EINK_IDLE_REFRESH_MINUTES", "30"),
+            )
+        )
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
         eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
         eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
@@ -84,10 +89,10 @@ class Settings:
             fullscreen=fullscreen,
             fade_speed=fade_speed,
             selected_movies=selected_movies,
+            idle_refresh_minutes=idle_refresh_minutes,
             eink_width=eink_width,
             eink_height=eink_height,
             eink_rotation=eink_rotation,
-            eink_idle_refresh_minutes=eink_idle_refresh_minutes,
             eink_preview_path=eink_preview_path,
             eink_pwr_pin=eink_pwr_pin,
         )
@@ -247,7 +252,9 @@ class PosterCoordinator:
         self.last_item_id: Optional[str] = None
         self.active_rotation_index = 0
 
-    def fetch_item(self, width: int, height: int) -> Optional[PosterDisplayItem]:
+    def fetch_item(
+        self, width: int, height: int, allow_idle_poster: bool = True
+    ) -> Optional[PosterDisplayItem]:
         active_movies = self.client.get_active_movie_sessions()
 
         if active_movies:
@@ -272,6 +279,9 @@ class PosterCoordinator:
                 is_playing=True,
                 user_name=user_name,
             )
+
+        if not allow_idle_poster:
+            return None
 
         self.active_rotation_index = 0
         item_id, title, image = self.client.get_random_poster_image(
@@ -320,7 +330,7 @@ def main() -> int:
             width=settings.eink_width,
             height=settings.eink_height,
             rotation=settings.eink_rotation,
-            idle_refresh_minutes=settings.eink_idle_refresh_minutes,
+            idle_refresh_minutes=settings.idle_refresh_minutes,
             poll_interval_seconds=settings.refresh_seconds,
             preview_path=settings.eink_preview_path,
             pwr_pin=settings.eink_pwr_pin,
@@ -332,6 +342,7 @@ def main() -> int:
         display_app = RegularDisplay(
             fetch_content_fn=coordinator.fetch_item,
             refresh_seconds=settings.refresh_seconds,
+            idle_refresh_minutes=settings.idle_refresh_minutes,
             background_color=settings.background_color,
             fullscreen=settings.fullscreen,
             fade_speed=settings.fade_speed,

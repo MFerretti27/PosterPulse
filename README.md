@@ -9,8 +9,10 @@ It supports two distinct display modes:
 Behavior:
 - If users are actively watching movies, it rotates through each currently watched movie poster.
 - If nobody is actively watching a movie, it shows posters from `SELECT_MOVIES` (if configured) or random posters from your library.
+- While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
 - On regular screens, poster changes use a configurable crossfade transition.
+- On regular screens, clicking or tapping advances to the next poster immediately.
 - On e-ink screens, posters are dithered to 6 colors (Black, White, Yellow, Red, Blue, Green) and the display is placed in deep sleep between updates to conserve energy and preserve panel life.
 
 ## 1) Setup
@@ -35,8 +37,9 @@ Set in `.env`:
 ```env
 DISPLAY_TYPE=regular
 FULLSCREEN=true
-FADE_SPEED=5
+FADE_SPEED=8
 REFRESH_SECONDS=30
+IDLE_REFRESH_MINUTES=30
 ```
 
 ### Option B: E-Ink Screen (Waveshare RPi Zero PhotoPainter)
@@ -70,7 +73,7 @@ Set in `.env`:
 ```env
 DISPLAY_TYPE=eink
 REFRESH_SECONDS=15              # How often to check if someone started playing a movie
-EINK_IDLE_REFRESH_MINUTES=15    # How often to rotate random posters when idle
+IDLE_REFRESH_MINUTES=30         # How often to rotate random posters when idle
 EINK_ROTATION=0                 # Set to 180 if the display is mounted upside-down
 EINK_PWR_PIN=27                 # PhotoPainter custom power pin (BCM 27)
 ```
@@ -98,7 +101,7 @@ EINK_PWR_PIN=27                 # PhotoPainter custom power pin (BCM 27)
 3. **Smart Refresh for E-Ink**:
    E-Paper displays require ~12-15 seconds for a full refresh and should not be refreshed continuously. PosterPulse polls Jellyfin every `REFRESH_SECONDS` (e.g. 15s) in the background, but only refreshes the e-Paper panel when:
    - Playback starts, changes, or stops.
-   - Or when the idle rotation timer (`EINK_IDLE_REFRESH_MINUTES`) elapses.
+   - Or when the idle rotation timer (`IDLE_REFRESH_MINUTES`) elapses.
    Between refreshes, the panel is put into deep sleep with power cut to BCM 27.
 
 4. **Headless Systemd Service (Recommended for Pi Zero 2 W)**:

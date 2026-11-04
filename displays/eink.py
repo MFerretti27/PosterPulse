@@ -15,7 +15,7 @@ class EInkDisplay(BaseDisplay):
 
     def __init__(
         self,
-        fetch_content_fn: Callable[[int, int], Optional[PosterDisplayItem]],
+        fetch_content_fn: Callable[[int, int, bool], Optional[PosterDisplayItem]],
         width: int = 800,
         height: int = 480,
         rotation: int = 0,
@@ -190,7 +190,15 @@ class EInkDisplay(BaseDisplay):
 
         while self.running:
             try:
-                item = self.fetch_content_fn(self.width, self.height)
+                now = time.time()
+                allow_idle_poster = (
+                    self.last_displayed_id is None
+                    or self.last_was_playing
+                    or now - self.last_refresh_time >= self.idle_refresh_seconds
+                )
+                item = self.fetch_content_fn(
+                    self.width, self.height, allow_idle_poster
+                )
                 if item:
                     now = time.time()
                     should_refresh = False
