@@ -140,6 +140,7 @@ if [[ -n "${TARGET_IP}" ]]; then
         --exclude='.DS_Store' \
         --exclude='.mypy_cache' \
         --exclude='.ruff_cache' \
+        --exclude='poster_cache' \
         --exclude='*.png' \
         -czf - -C "${REPO_DIR}" . | ssh -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
 

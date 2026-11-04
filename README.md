@@ -7,9 +7,12 @@ It supports two distinct display modes:
 2. **E-Ink Display (Waveshare RPi Zero PhotoPainter 7.3")**: A lightweight, headless e-Paper driver with 6-color Floyd-Steinberg dithering, sleep-mode power management, and smart refresh logic tailored to e-Paper refresh limits.
 
 Behavior:
-- If users are actively watching movies, it rotates through each currently watched movie poster.
-- If nobody is actively watching a movie, it shows posters from `SELECT_MOVIES` (if configured) or random posters from your library.
+- If users are actively watching configured media types, it displays their movie or TV-series poster.
+- If nobody is actively watching, it shows posters from `SELECT_MOVIES` (if configured) or random posters from the configured library media types.
+- `MEDIA_TYPES` selects movies, TV series, or both; `GENRES` optionally limits poster selection to items matching any listed genre.
+- When `HOLIDAY_MODE=true`, the matching holiday's genre replaces `GENRES` for its configured date range. Holiday date ranges repeat yearly and may cross New Year.
 - While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
+- Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
 - On regular screens, poster changes use a configurable crossfade transition.
 - On regular screens, clicking or tapping advances to the next poster immediately.
@@ -40,7 +43,21 @@ FULLSCREEN=true
 FADE_SPEED=8
 REFRESH_SECONDS=30
 IDLE_REFRESH_MINUTES=30
+POSTER_CACHE_SIZE=10
+MEDIA_TYPES=Movie,Series
+GENRES=Action,Comedy
+HOLIDAY_MODE=true
+HOLIDAYS=Christmas,Independence Day,Halloween,Thanksgiving
+CHRISTMAS_GENRE=Christmas
+CHRISTMAS_DAYS=12/18-12/31
+INDEPENDENCE_DAY_GENRE=Action
+INDEPENDENCE_DAY_DAYS=07/01-07/07
+HALLOWEEN_GENRE=Horror
+HALLOWEEN_DAYS=10/20-10/31
+THANKSGIVING_GENRE=Family
+THANKSGIVING_DAYS=11/20-11/30
 ```
+For each entry in `HOLIDAYS`, define `<HOLIDAY_NAME>_GENRE` and `<HOLIDAY_NAME>_DAYS`, replacing spaces and punctuation with underscores. For example, `Valentine's Day` uses `VALENTINE_S_DAY_GENRE` and `VALENTINE_S_DAY_DAYS`. Multiple active holiday genre rules are combined.
 
 #### Automated LCD setup
 From a Mac or Linux computer, deploy and configure a Raspberry Pi with Raspberry Pi OS Desktop over SSH:

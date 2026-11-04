@@ -63,7 +63,8 @@ if [[ -n "$TARGET_IP" ]]; then
     ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
     tar --exclude='.git' --exclude='.venv' --exclude='venv' \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='.DS_Store' \
-        --exclude='.mypy_cache' --exclude='.ruff_cache' --exclude='*.png' \
+        --exclude='.mypy_cache' --exclude='.ruff_cache' \
+        --exclude='poster_cache' --exclude='*.png' \
         -czf - -C "$REPO_DIR" . |
         ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
 
