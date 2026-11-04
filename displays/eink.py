@@ -206,6 +206,8 @@ class EInkDisplay(BaseDisplay):
                     self.width, self.height, allow_idle_poster
                 )
                 was_connection_lost = self.connection_lost
+                if was_connection_lost and item is None and self.last_good_item is None:
+                    item = self.fetch_content_fn(self.width, self.height, True)
                 self.connection_lost = bool(item and item.connection_lost)
                 recovered = was_connection_lost and not self.connection_lost
                 if item:
