@@ -42,6 +42,18 @@ REFRESH_SECONDS=30
 IDLE_REFRESH_MINUTES=30
 ```
 
+#### Automated LCD setup
+From a Mac or Linux computer, deploy and configure a Raspberry Pi with Raspberry Pi OS Desktop over SSH:
+```bash
+bash .github/setup-pi-lcd.sh -ip=10.0.0.119 -user=matt
+```
+The script installs Tkinter/Pillow display dependencies, configures regular mode, and adds PosterPulse to the desktop's autostart. The Pi must have a graphical desktop session and an LCD/HDMI display.
+
+For setup directly on the Pi, run:
+```bash
+sudo bash .github/setup-pi-lcd.sh --local
+```
+
 ### Option B: E-Ink Screen (Waveshare RPi Zero PhotoPainter)
 
 #### Quick Automated Setup from your Computer (Recommended)
