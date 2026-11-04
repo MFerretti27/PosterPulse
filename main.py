@@ -291,17 +291,34 @@ class JellyfinClient:
         user_id = self.resolve_user_id()
 
         items_url = f"{self.base_url}/Users/{user_id}/Items"
+        page_size = 500
         params = {
             "Recursive": "true",
             "IncludeItemTypes": ",".join(self.media_types),
             "Fields": "PrimaryImageAspectRatio,Genres",
             "HasPrimaryImage": "true",
-            "Limit": "500",
+            "Limit": str(page_size),
         }
 
-        response = self._get(items_url, params=params, timeout=15)
-        payload = response.json()
-        items = payload.get("Items", [])
+        items = []
+        start_index = 0
+        while True:
+            params["StartIndex"] = str(start_index)
+            payload = self._get(items_url, params=params, timeout=15).json()
+            page_items = payload.get("Items", [])
+            items.extend(page_items)
+
+            total_count = payload.get("TotalRecordCount")
+            if (
+                not page_items
+                or len(page_items) < page_size
+                or (
+                    total_count is not None
+                    and start_index + len(page_items) >= total_count
+                )
+            ):
+                break
+            start_index += len(page_items)
 
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
