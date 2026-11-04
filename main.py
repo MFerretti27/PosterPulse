@@ -146,11 +146,15 @@ class Settings:
                 raise ValueError("HOLIDAY_MODE is enabled but HOLIDAYS is empty.")
             for name in holiday_names:
                 key = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
-                genre_value = os.getenv(f"{key}_GENRE") or os.getenv(
-                    f"HOLIDAY_{key}_GENRE", ""
+                genre_value = (
+                    os.getenv(f"{key}_GENRE")
+                    or os.getenv(f"HOLIDAY_{key}_GENRE")
+                    or ""
                 )
-                days_value = os.getenv(f"{key}_DAYS") or os.getenv(
-                    f"HOLIDAY_{key}_DAYS", ""
+                days_value = (
+                    os.getenv(f"{key}_DAYS")
+                    or os.getenv(f"HOLIDAY_{key}_DAYS")
+                    or ""
                 )
                 holiday_genres = [
                     genre.strip() for genre in genre_value.split(",") if genre.strip()
@@ -378,7 +382,7 @@ class JellyfinClient:
             if not item_id:
                 continue
 
-            if not self._matches_genres(genre_item, item_id):
+            if self.genres and not self._matches_genres(genre_item, item_id):
                 continue
 
             active_movies.append(
