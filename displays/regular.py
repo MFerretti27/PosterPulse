@@ -42,6 +42,7 @@ class RegularDisplay(BaseDisplay):
         self._pending_advances = 0
         self._fade_in_progress = False
         self._refresh_after_id: Optional[str] = None
+        self._connection_lost = False
 
         self.root = tk.Tk()
         self.root.configure(bg=self.background_color)
@@ -51,29 +52,8 @@ class RegularDisplay(BaseDisplay):
         if self.fullscreen:
             self.root.attributes("-fullscreen", True)
 
-        banner_text = "Currently Playing"
-        banner_font = ImageFont.load_default(size=26)
-        text_bounds = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox(
-            (0, 0), banner_text, font=banner_font
-        )
         self._top_banner_width = 64
-        banner_width = self._top_banner_width
-        screen_height = self.root.winfo_screenheight()
-        banner = Image.new(
-            "RGB", (screen_height, banner_width), "#8B0000"
-        )
-        text_width = text_bounds[2] - text_bounds[0]
-        text_height = text_bounds[3] - text_bounds[1]
-        ImageDraw.Draw(banner).text(
-            (
-                (screen_height - text_width) // 2 - text_bounds[0],
-                (banner_width - text_height) // 2 - text_bounds[1],
-            ),
-            banner_text,
-            fill="white",
-            font=banner_font,
-        )
-        self._top_banner_image = ImageTk.PhotoImage(banner.rotate(90, expand=True))
+        self._top_banner_image = self._make_banner_image("Currently Playing")
         self.top_banner = tk.Label(
             self.root, image=self._top_banner_image, bg="#8B0000", borderwidth=0
         )
@@ -146,6 +126,30 @@ class RegularDisplay(BaseDisplay):
             self.top_banner.lift()
             self.banner_visible = True
 
+    def _make_banner_image(self, text: str) -> ImageTk.PhotoImage:
+        """Create a full-height red vertical banner with centered text."""
+        screen_height = self.root.winfo_screenheight()
+        font = ImageFont.load_default(size=26)
+        draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        bounds = draw.textbbox((0, 0), text, font=font)
+        banner = Image.new("RGB", (screen_height, self._top_banner_width), "#8B0000")
+        text_width = bounds[2] - bounds[0]
+        text_height = bounds[3] - bounds[1]
+        ImageDraw.Draw(banner).text(
+            (
+                (screen_height - text_width) // 2 - bounds[0],
+                (self._top_banner_width - text_height) // 2 - bounds[1],
+            ),
+            text,
+            fill="white",
+            font=font,
+        )
+        return ImageTk.PhotoImage(banner.rotate(90, expand=True))
+
+    def _set_banner_text(self, text: str) -> None:
+        self._top_banner_image = self._make_banner_image(text)
+        self.top_banner.configure(image=self._top_banner_image)
+
     def _hide_top_banner(self) -> None:
         if self.banner_visible:
             self.top_banner.place_forget()
@@ -172,17 +176,24 @@ class RegularDisplay(BaseDisplay):
                 self._pending_advances -= 1
             allow_idle_poster = (
                 manual_advance
+                or self._connection_lost
                 or self._last_displayed_id is None
                 or self._last_was_playing
                 or now - self._last_refresh_time >= self.idle_refresh_seconds
             )
             item = self.fetch_content_fn(screen_w, screen_h, allow_idle_poster)
+            recovered = self._connection_lost
+            self._connection_lost = False
 
             if item is None:
+                if recovered:
+                    self._hide_top_banner()
                 schedule_next()
                 return
 
-            should_render = manual_advance or self._last_displayed_id is None
+            should_render = (
+                manual_advance or recovered or self._last_displayed_id is None
+            )
             if item.is_playing != self._last_was_playing:
                 should_render = True
             elif item.is_playing and item.item_id != self._last_displayed_id:
@@ -198,6 +209,7 @@ class RegularDisplay(BaseDisplay):
                 return
 
             if item.is_playing:
+                self._set_banner_text("Currently Playing")
                 self._show_top_banner()
                 self.status.place_forget()
             else:
@@ -218,8 +230,10 @@ class RegularDisplay(BaseDisplay):
             return
         except Exception as exc:
             logger.exception("Poll failed: %s", exc)
-            self.status.configure(text=f"Error: {exc}")
-            self.status.place(x=0, rely=1.0, anchor="sw", relwidth=1.0)
+            self._connection_lost = True
+            self._set_banner_text("Connection Lost")
+            self._show_top_banner()
+            self.status.place_forget()
 
         schedule_next()
 

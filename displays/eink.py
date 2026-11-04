@@ -37,6 +37,8 @@ class EInkDisplay(BaseDisplay):
         self.last_displayed_id: Optional[str] = None
         self.last_refresh_time: float = 0.0
         self.last_was_playing: bool = False
+        self.connection_lost = False
+        self.last_good_item: Optional[PosterDisplayItem] = None
 
         # Initialize hardware driver
         self.is_hardware_available = False
@@ -101,14 +103,14 @@ class EInkDisplay(BaseDisplay):
         paste_y = (self.height - new_h) // 2
         canvas.paste(resized, (paste_x, paste_y))
 
-        # Add optional subtle "NOW PLAYING" indicator if movie is active
-        if item.is_playing:
+        # Show a red vertical status banner for playback or lost connectivity.
+        if item.is_playing or item.connection_lost:
             banner_width = 42
             # Build the label in landscape, then rotate it counter-clockwise
             # into a vertical strip on the display's short side.
             banner = Image.new("RGB", (self.height, banner_width), (180, 0, 0))
             draw = ImageDraw.Draw(banner)
-            label_text = "NOW PLAYING"
+            label_text = "CONNECTION LOST" if item.connection_lost else "NOW PLAYING"
             try:
                 font = ImageFont.load_default(size=24)
             except Exception:
@@ -170,6 +172,8 @@ class EInkDisplay(BaseDisplay):
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
+        if not item.connection_lost:
+            self.last_good_item = item
 
     def run(self) -> None:
         """Run the e-ink polling loop."""
@@ -192,16 +196,19 @@ class EInkDisplay(BaseDisplay):
             try:
                 now = time.time()
                 allow_idle_poster = (
-                    self.last_displayed_id is None
+                    self.connection_lost
+                    or self.last_displayed_id is None
                     or self.last_was_playing
                     or now - self.last_refresh_time >= self.idle_refresh_seconds
                 )
                 item = self.fetch_content_fn(
                     self.width, self.height, allow_idle_poster
                 )
+                recovered = self.connection_lost
+                self.connection_lost = False
                 if item:
                     now = time.time()
-                    should_refresh = False
+                    should_refresh = recovered
 
                     # Condition 1: First render
                     if self.last_displayed_id is None:
@@ -235,8 +242,27 @@ class EInkDisplay(BaseDisplay):
 
                     if should_refresh:
                         self.render_item(item)
+                elif recovered and self.last_good_item is not None:
+                    # Remove the connection warning while retaining the last poster.
+                    self.render_item(self.last_good_item)
             except Exception as exc:
                 logger.exception("Error in e-ink loop: %s", exc)
+                if not self.connection_lost:
+                    self.connection_lost = True
+                    previous = self.last_good_item
+                    warning_item = PosterDisplayItem(
+                        item_id=previous.item_id if previous else "connection-lost",
+                        title=previous.title if previous else "Connection Lost",
+                        image=(
+                            previous.image.copy()
+                            if previous
+                            else Image.new("RGB", (self.width, self.height), "black")
+                        ),
+                        is_playing=previous.is_playing if previous else False,
+                        user_name=previous.user_name if previous else None,
+                        connection_lost=True,
+                    )
+                    self.render_item(warning_item)
 
             # Sleep in small increments for fast response to shutdown signals
             for _ in range(self.poll_interval_seconds):

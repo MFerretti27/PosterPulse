@@ -11,6 +11,7 @@ class PosterDisplayItem:
     image: Image.Image
     is_playing: bool = False
     user_name: Optional[str] = None
+    connection_lost: bool = False
 
 
 class BaseDisplay(abc.ABC):
