@@ -2,8 +2,10 @@ import io
 import logging
 import os
 import random
+import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 import requests  # type: ignore[import]
@@ -20,6 +22,20 @@ class JellyfinConnectionError(RuntimeError):
     """Raised when Jellyfin responds with an unsuccessful HTTP status."""
 
 
+@dataclass(frozen=True)
+class HolidayRule:
+    name: str
+    genres: List[str]
+    start_month_day: tuple[int, int]
+    end_month_day: tuple[int, int]
+
+    def is_active(self, current_date: date) -> bool:
+        current = (current_date.month, current_date.day)
+        if self.start_month_day <= self.end_month_day:
+            return self.start_month_day <= current <= self.end_month_day
+        return current >= self.start_month_day or current <= self.end_month_day
+
+
 @dataclass
 class Settings:
     jellyfin_url: str
@@ -32,6 +48,8 @@ class Settings:
     selected_movies: List[str] = field(default_factory=list)
     media_types: List[str] = field(default_factory=lambda: ["Movie"])
     genres: List[str] = field(default_factory=list)
+    holiday_mode: bool = False
+    holiday_rules: List[HolidayRule] = field(default_factory=list)
     idle_refresh_minutes: int = 30
     poster_cache_size: int = 10
 
@@ -111,6 +129,56 @@ class Settings:
             for genre in os.getenv("GENRES", "").split(",")
             if genre.strip()
         ]
+        holiday_mode = os.getenv("HOLIDAY_MODE", "false").strip().casefold() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        holiday_names = [
+            name.strip()
+            for name in os.getenv("HOLIDAYS", "").split(",")
+            if name.strip()
+        ]
+        holiday_rules: List[HolidayRule] = []
+        if holiday_mode:
+            if not holiday_names:
+                raise ValueError("HOLIDAY_MODE is enabled but HOLIDAYS is empty.")
+            for name in holiday_names:
+                key = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
+                genre_value = os.getenv(f"{key}_GENRE") or os.getenv(
+                    f"HOLIDAY_{key}_GENRE", ""
+                )
+                days_value = os.getenv(f"{key}_DAYS") or os.getenv(
+                    f"HOLIDAY_{key}_DAYS", ""
+                )
+                holiday_genres = [
+                    genre.strip() for genre in genre_value.split(",") if genre.strip()
+                ]
+                if not holiday_genres or not days_value.strip():
+                    raise ValueError(
+                        f"Holiday '{name}' needs {key}_GENRE and {key}_DAYS settings."
+                    )
+                start_end = days_value.strip().split("-", maxsplit=1)
+                if len(start_end) != 2:
+                    raise ValueError(
+                        f"{key}_DAYS must use MM/DD-MM/DD format, for example 12/18-12/31."
+                    )
+                try:
+                    start = datetime.strptime(start_end[0].strip(), "%m/%d")
+                    end = datetime.strptime(start_end[1].strip(), "%m/%d")
+                except ValueError as exc:
+                    raise ValueError(
+                        f"{key}_DAYS must use valid MM/DD-MM/DD dates."
+                    ) from exc
+                holiday_rules.append(
+                    HolidayRule(
+                        name=name,
+                        genres=holiday_genres,
+                        start_month_day=(start.month, start.day),
+                        end_month_day=(end.month, end.day),
+                    )
+                )
 
         eink_width = int(os.getenv("EINK_WIDTH", "800"))
         eink_height = int(os.getenv("EINK_HEIGHT", "480"))
@@ -137,6 +205,8 @@ class Settings:
             selected_movies=selected_movies,
             media_types=media_types,
             genres=genres,
+            holiday_mode=holiday_mode,
+            holiday_rules=holiday_rules,
             idle_refresh_minutes=idle_refresh_minutes,
             poster_cache_size=poster_cache_size,
             eink_width=eink_width,
@@ -152,6 +222,8 @@ class JellyfinClient:
         self.base_url = settings.jellyfin_url
         self.media_types = settings.media_types
         self.genres = {genre.casefold() for genre in settings.genres}
+        self.holiday_mode = settings.holiday_mode
+        self.holiday_rules = settings.holiday_rules
         self.user_id: Optional[str] = None
         self.session = requests.Session()
         self.session.headers.update(
@@ -211,6 +283,7 @@ class JellyfinClient:
         last_item_id: Optional[str] = None,
         selected_movies: Optional[List[str]] = None,
     ):
+        genres = self._current_genres()
         user_id = self.resolve_user_id()
 
         items_url = f"{self.base_url}/Users/{user_id}/Items"
@@ -229,18 +302,18 @@ class JellyfinClient:
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
 
-        if self.genres:
+        if genres:
             items = [
                 item
                 for item in items
-                if self.genres.intersection(
+            if genres.intersection(
                     str(genre).casefold()
                     for genre in (item.get("Genres") or [])
                 )
             ]
             if not items:
                 raise RuntimeError(
-                    "No media with posters matched the configured GENRES."
+                    "No media with posters matched the current genre configuration."
                 )
 
         if selected_movies:
@@ -265,6 +338,21 @@ class JellyfinClient:
             item_id=item_id, max_width=max_width, max_height=max_height
         )
         return item_id, chosen.get("Name", "Unknown Title"), image
+
+    def _current_genres(self, current_date: Optional[date] = None) -> set[str]:
+        """Use active holiday genres, otherwise the standard GENRES setting."""
+        if self.holiday_mode:
+            today = current_date or date.today()
+            active_rules = [rule for rule in self.holiday_rules if rule.is_active(today)]
+            if active_rules:
+                names = ", ".join(rule.name for rule in active_rules)
+                logger.info("Holiday genre mode active: %s", names)
+                return {
+                    genre.casefold()
+                    for rule in active_rules
+                    for genre in rule.genres
+                }
+        return self.genres
 
     def get_active_media_sessions(self) -> List[Dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
@@ -305,6 +393,9 @@ class JellyfinClient:
         return active_movies
 
     def _matches_genres(self, item: dict, item_id: str) -> bool:
+        genres = self._current_genres()
+        if not genres:
+            return True
         item_genres = item.get("Genres")
         if not item_genres:
             response = self._get(
@@ -314,7 +405,7 @@ class JellyfinClient:
             )
             item_genres = response.json().get("Genres", [])
         return bool(
-            self.genres.intersection(str(genre).casefold() for genre in item_genres)
+            genres.intersection(str(genre).casefold() for genre in item_genres or [])
         )
 
     def get_item_poster_image(
