@@ -3,14 +3,14 @@ import logging
 import os
 import random
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import requests  # type: ignore[import]
 from dotenv import load_dotenv  # type: ignore[import]
-from PIL import Image, ImageTk  # type: ignore[import]
-import tkinter as tk
+from PIL import Image  # type: ignore[import]
 
+from displays.base import BaseDisplay, PosterDisplayItem
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +19,20 @@ logger = logging.getLogger(__name__)
 class Settings:
     jellyfin_url: str
     api_token: str
-    refresh_seconds: int
-    background_color: str
-    fullscreen: bool
-    fade_speed: int  # 1 (slowest) to 10 (fastest)
-    selected_movies: List[str]
+    display_type: str = "regular"  # "regular" or "eink"
+    refresh_seconds: int = 30
+    background_color: str = "black"
+    fullscreen: bool = True
+    fade_speed: int = 5  # 1 (slowest) to 10 (fastest)
+    selected_movies: List[str] = field(default_factory=list)
+
+    # E-Ink specific settings (optimized for Waveshare 7.3" PhotoPainter)
+    eink_width: int = 800
+    eink_height: int = 480
+    eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
+    eink_idle_refresh_minutes: int = 15
+    eink_preview_path: Optional[str] = "eink_preview.png"
+    eink_pwr_pin: int = 27  # BCM 27 on Waveshare PhotoPainter PCB
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -36,6 +45,12 @@ class Settings:
             raise ValueError("JELLYFIN_URL is required")
         if not api_token:
             raise ValueError("JELLYFIN_API_TOKEN is required")
+
+        display_type = os.getenv("DISPLAY_TYPE", "regular").strip().lower()
+        if display_type in {"e-ink", "epaper", "epd", "photopainter"}:
+            display_type = "eink"
+        elif display_type in {"screen", "hdmi", "monitor", "gui", "tkinter"}:
+            display_type = "regular"
 
         refresh_seconds = int(os.getenv("REFRESH_SECONDS", "30"))
         background_color = os.getenv("BACKGROUND_COLOR", "black")
@@ -52,14 +67,29 @@ class Settings:
             if title.strip()
         ]
 
+        eink_width = int(os.getenv("EINK_WIDTH", "800"))
+        eink_height = int(os.getenv("EINK_HEIGHT", "480"))
+        eink_rotation = int(os.getenv("EINK_ROTATION", "0"))
+        eink_idle_refresh_minutes = int(os.getenv("EINK_IDLE_REFRESH_MINUTES", "15"))
+        raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
+        eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
+        eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
+
         return cls(
             jellyfin_url=jellyfin_url,
             api_token=api_token,
+            display_type=display_type,
             refresh_seconds=refresh_seconds,
             background_color=background_color,
             fullscreen=fullscreen,
             fade_speed=fade_speed,
             selected_movies=selected_movies,
+            eink_width=eink_width,
+            eink_height=eink_height,
+            eink_rotation=eink_rotation,
+            eink_idle_refresh_minutes=eink_idle_refresh_minutes,
+            eink_preview_path=eink_preview_path,
+            eink_pwr_pin=eink_pwr_pin,
         )
 
 
@@ -85,7 +115,9 @@ class JellyfinClient:
             body = f"{body[:220]}..."
         return body or "<empty body>"
 
-    def _get(self, url: str, *, params: Optional[dict] = None, timeout: int = 10) -> requests.Response:
+    def _get(
+        self, url: str, *, params: Optional[dict] = None, timeout: int = 10
+    ) -> requests.Response:
         response = self.session.get(url, params=params, timeout=timeout)
         try:
             response.raise_for_status()
@@ -159,12 +191,16 @@ class JellyfinClient:
         chosen = random.choice(candidates)
         item_id = chosen["Id"]
 
-        image = self.get_item_poster_image(item_id=item_id, max_width=max_width, max_height=max_height)
+        image = self.get_item_poster_image(
+            item_id=item_id, max_width=max_width, max_height=max_height
+        )
         return item_id, chosen.get("Name", "Unknown Title"), image
 
     def get_active_movie_sessions(self) -> List[Dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
-        response = self._get(sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15)
+        response = self._get(
+            sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15
+        )
         sessions = response.json()
         active_movies: List[Dict[str, str]] = []
 
@@ -188,7 +224,9 @@ class JellyfinClient:
 
         return active_movies
 
-    def get_item_poster_image(self, item_id: str, max_width: int, max_height: int) -> Image.Image:
+    def get_item_poster_image(
+        self, item_id: str, max_width: int, max_height: int
+    ) -> Image.Image:
         image_url = f"{self.base_url}/Items/{item_id}/Images/Primary"
         image_params = {
             "MaxWidth": str(max_width),
@@ -200,169 +238,56 @@ class JellyfinClient:
         return Image.open(io.BytesIO(image_response.content)).convert("RGB")
 
 
-class PosterDisplayApp:
-    # Crossfade tuning: macOS timer resolution floors at ~15 ms per frame, so
-    # reducing FADE_INTERVAL_MS alone won't speed things up past a point.
-    # Both FADE_STEPS and FADE_INTERVAL_MS scale down with higher speeds so
-    # the total frame count (and thus wall time) genuinely shrinks:
-    #   speed 1  → 30 steps × 200 ms = ~6 s
-    #   speed 5  → 16 steps × 30 ms  = ~0.5 s
-    #   speed 10 → 4 steps  × 15 ms  = ~0.06 s (nearly instant)
+class PosterCoordinator:
+    """Coordinates fetching poster data and managing playback/idle rotation state."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, client: JellyfinClient, settings: Settings) -> None:
+        self.client = client
         self.settings = settings
-        s = settings.fade_speed  # 1–10
-        # Steps: 30 at speed 1, down to 4 at speed 10 (fewer frames = faster)
-        self.FADE_STEPS = max(4, 32 - s * 3)
-        # Interval: 200 ms at speed 1, 15 ms at speed 10 (OS timer floor ~15 ms)
-        self.FADE_INTERVAL_MS = max(15, 215 - s * 20)
-        self.client = JellyfinClient(settings)
         self.last_item_id: Optional[str] = None
         self.active_rotation_index = 0
-        self._current_canvas: Optional[Image.Image] = None
 
-        self.root = tk.Tk()
-        self.root.configure(bg=settings.background_color)
-        self.root.bind("<Escape>", lambda _event: self.exit_app())
+    def fetch_item(self, width: int, height: int) -> Optional[PosterDisplayItem]:
+        active_movies = self.client.get_active_movie_sessions()
 
-        if settings.fullscreen:
-            self.root.attributes("-fullscreen", True)
-
-        self.top_banner = tk.Label(
-            self.root,
-            text="Currently Playing",
-            anchor="center",
-            bg="#8B0000",
-            fg="white",
-            padx=10,
-            pady=8,
-            font=("Helvetica", 18, "bold"),
-        )
-        self.banner_visible = False
-
-        self.label = tk.Label(self.root, bg=settings.background_color)
-        self.label.pack(fill=tk.BOTH, expand=True)
-
-        self.status = tk.Label(
-            self.root,
-            text="Loading...",
-            anchor="w",
-            bg=settings.background_color,
-            fg="white",
-            padx=10,
-            pady=8,
-        )
-        self.status.pack(fill=tk.X)
-
-        self._tk_image = None
-
-    def _on_black_canvas(self, image: Image.Image) -> Image.Image:
-        """Paste *image* centred on a full-screen black canvas."""
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        canvas = Image.new("RGB", (screen_w, screen_h), "black")
-        x = (screen_w - image.width) // 2
-        y = (screen_h - image.height) // 2
-        canvas.paste(image, (x, y))
-        return canvas
-
-    def _do_fade(self, old: Image.Image, new: Image.Image, step: int, on_done) -> None:
-        alpha = step / self.FADE_STEPS
-        frame = Image.blend(old, new, alpha)
-        self._tk_image = ImageTk.PhotoImage(frame)
-        self.label.configure(image=self._tk_image)
-        if step < self.FADE_STEPS:
-            self.root.after(
-                self.FADE_INTERVAL_MS,
-                lambda: self._do_fade(old, new, step + 1, on_done),
+        if active_movies:
+            selected = active_movies[self.active_rotation_index % len(active_movies)]
+            self.active_rotation_index += 1
+            item_id = selected["item_id"]
+            title = selected["title"]
+            user_name = selected["user_name"]
+            image = self.client.get_item_poster_image(
+                item_id=item_id, max_width=width, max_height=height
             )
-        else:
-            on_done()
-
-    def exit_app(self) -> None:
-        self.root.destroy()
-
-    def _fit_to_screen(self, image: Image.Image) -> Image.Image:
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-
-        # Keep poster long axis aligned with the screen's long axis.
-        screen_long_horizontal = screen_w >= screen_h
-        img_w, img_h = image.size
-        image_long_horizontal = img_w >= img_h
-        if image_long_horizontal != screen_long_horizontal:
-            image = image.rotate(90, expand=True)
-            img_w, img_h = image.size
-
-        scale = min(screen_w / img_w, screen_h / img_h)
-        new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
-        return image.resize(new_size, Image.Resampling.LANCZOS)
-
-    def _show_top_banner(self) -> None:
-        if not self.banner_visible:
-            self.top_banner.place(x=0, y=0, relwidth=1.0)
-            self.top_banner.lift()
-            self.banner_visible = True
-
-    def _hide_top_banner(self) -> None:
-        if self.banner_visible:
-            self.top_banner.place_forget()
-            self.banner_visible = False
-
-    def refresh_once(self) -> None:
-        def schedule_next() -> None:
-            self.root.after(self.settings.refresh_seconds * 1000, self.refresh_once)
-
-        try:
-            screen_w = self.root.winfo_screenwidth()
-            screen_h = self.root.winfo_screenheight()
-            active_movies = self.client.get_active_movie_sessions()
-
-            if active_movies:
-                selected = active_movies[self.active_rotation_index % len(active_movies)]
-                self.active_rotation_index += 1
-                item_id = selected["item_id"]
-                title = selected["title"]
-                user_name = selected["user_name"]
-                image = self.client.get_item_poster_image(item_id=item_id, max_width=screen_w, max_height=screen_h)
-                status_text = f"Watching now: {user_name} - {title}"
-                self._show_top_banner()
-                users_playing = ", ".join(
-                    f"{movie['user_name']}: {movie['title']}" for movie in active_movies
-                )
-                logger.info("Users Playing: %s", users_playing)
-            else:
-                self.active_rotation_index = 0
-                item_id, title, image = self.client.get_random_poster_image(
-                    max_width=screen_w,
-                    max_height=screen_h,
-                    last_item_id=self.last_item_id,
-                    selected_movies=self.settings.selected_movies,
-                )
-                if self.settings.selected_movies:
-                    status_text = f"No active sessions. Selected-movie poster: {title}"
-                else:
-                    status_text = f"No active movie sessions. Random poster: {title}"
-                self._hide_top_banner()
-                logger.info("random movie poster grabbed: %s", title)
-
-            fitted = self._fit_to_screen(image)
-            new_canvas = self._on_black_canvas(fitted)
-            old_canvas = self._current_canvas or Image.new("RGB", new_canvas.size, "black")
-            self._current_canvas = new_canvas
-            self.status.configure(text=status_text)
             self.last_item_id = item_id
-            self._do_fade(old_canvas, new_canvas, 1, schedule_next)
-            return
-        except Exception as exc:
-            logger.exception("Poll failed: %s", exc)
-            self.status.configure(text=f"Error: {exc}")
 
-        schedule_next()
+            users_playing = ", ".join(
+                f"{movie['user_name']}: {movie['title']}" for movie in active_movies
+            )
+            logger.info("Active movie sessions (%s): '%s'", users_playing, title)
+            return PosterDisplayItem(
+                item_id=item_id,
+                title=title,
+                image=image,
+                is_playing=True,
+                user_name=user_name,
+            )
 
-    def run(self) -> None:
-        self.refresh_once()
-        self.root.mainloop()
+        self.active_rotation_index = 0
+        item_id, title, image = self.client.get_random_poster_image(
+            max_width=width,
+            max_height=height,
+            last_item_id=self.last_item_id,
+            selected_movies=self.settings.selected_movies,
+        )
+        self.last_item_id = item_id
+        logger.info("Fetched idle poster: '%s'", title)
+        return PosterDisplayItem(
+            item_id=item_id,
+            title=title,
+            image=image,
+            is_playing=False,
+        )
 
 
 def main() -> int:
@@ -377,8 +302,48 @@ def main() -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    app = PosterDisplayApp(settings)
-    app.run()
+    client = JellyfinClient(settings)
+    coordinator = PosterCoordinator(client, settings)
+
+    display_app: BaseDisplay
+    if settings.display_type == "eink":
+        logger.info(
+            "Initializing E-Ink display mode (%dx%d, PhotoPainter PWR=BCM %d)",
+            settings.eink_width,
+            settings.eink_height,
+            settings.eink_pwr_pin,
+        )
+        from displays.eink import EInkDisplay
+
+        display_app = EInkDisplay(
+            fetch_content_fn=coordinator.fetch_item,
+            width=settings.eink_width,
+            height=settings.eink_height,
+            rotation=settings.eink_rotation,
+            idle_refresh_minutes=settings.eink_idle_refresh_minutes,
+            poll_interval_seconds=settings.refresh_seconds,
+            preview_path=settings.eink_preview_path,
+            pwr_pin=settings.eink_pwr_pin,
+        )
+    else:
+        logger.info("Initializing Regular (HDMI / GUI) display mode")
+        from displays.regular import RegularDisplay
+
+        display_app = RegularDisplay(
+            fetch_content_fn=coordinator.fetch_item,
+            refresh_seconds=settings.refresh_seconds,
+            background_color=settings.background_color,
+            fullscreen=settings.fullscreen,
+            fade_speed=settings.fade_speed,
+        )
+
+    try:
+        display_app.run()
+    except KeyboardInterrupt:
+        logger.info("Exiting on user interrupt.")
+    finally:
+        display_app.cleanup()
+
     return 0
 
 
