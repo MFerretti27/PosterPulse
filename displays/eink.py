@@ -38,6 +38,7 @@ class EInkDisplay(BaseDisplay):
         self.last_refresh_time: float = 0.0
         self.last_was_playing: bool = False
         self.connection_lost = False
+        self.last_display_connection_lost = False
         self.last_good_item: Optional[PosterDisplayItem] = None
 
         # Initialize hardware driver
@@ -172,6 +173,7 @@ class EInkDisplay(BaseDisplay):
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
+        self.last_display_connection_lost = item.connection_lost
         if not item.connection_lost:
             self.last_good_item = item
 
@@ -196,19 +198,22 @@ class EInkDisplay(BaseDisplay):
             try:
                 now = time.time()
                 allow_idle_poster = (
-                    self.connection_lost
-                    or self.last_displayed_id is None
+                    self.last_displayed_id is None
                     or self.last_was_playing
                     or now - self.last_refresh_time >= self.idle_refresh_seconds
                 )
                 item = self.fetch_content_fn(
                     self.width, self.height, allow_idle_poster
                 )
-                recovered = self.connection_lost
-                self.connection_lost = False
+                was_connection_lost = self.connection_lost
+                self.connection_lost = bool(item and item.connection_lost)
+                recovered = was_connection_lost and not self.connection_lost
                 if item:
                     now = time.time()
-                    should_refresh = recovered
+                    should_refresh = (
+                        recovered
+                        or item.connection_lost != self.last_display_connection_lost
+                    )
 
                     # Condition 1: First render
                     if self.last_displayed_id is None:
@@ -228,6 +233,8 @@ class EInkDisplay(BaseDisplay):
                     elif item.is_playing and item.item_id != self.last_displayed_id:
                         should_refresh = True
                         logger.info("Active playing movie changed to '%s'.", item.title)
+                    elif item.connection_lost and item.item_id != self.last_displayed_id:
+                        should_refresh = True
 
                     # Condition 4: Idle timeout elapsed, rotate random poster
                     elif (

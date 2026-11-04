@@ -10,6 +10,7 @@ Behavior:
 - If users are actively watching movies, it rotates through each currently watched movie poster.
 - If nobody is actively watching a movie, it shows posters from `SELECT_MOVIES` (if configured) or random posters from your library.
 - While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
+- Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
 - On regular screens, poster changes use a configurable crossfade transition.
 - On regular screens, clicking or tapping advances to the next poster immediately.
@@ -40,6 +41,7 @@ FULLSCREEN=true
 FADE_SPEED=8
 REFRESH_SECONDS=30
 IDLE_REFRESH_MINUTES=30
+POSTER_CACHE_SIZE=10
 ```
 
 #### Automated LCD setup

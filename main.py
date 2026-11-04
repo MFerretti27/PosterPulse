@@ -11,8 +11,13 @@ from dotenv import load_dotenv  # type: ignore[import]
 from PIL import Image  # type: ignore[import]
 
 from displays.base import BaseDisplay, PosterDisplayItem
+from displays.cache import PosterCache
 
 logger = logging.getLogger(__name__)
+
+
+class JellyfinConnectionError(RuntimeError):
+    """Raised when Jellyfin responds with an unsuccessful HTTP status."""
 
 
 @dataclass
@@ -26,6 +31,7 @@ class Settings:
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     selected_movies: List[str] = field(default_factory=list)
     idle_refresh_minutes: int = 30
+    poster_cache_size: int = 10
 
     # E-Ink specific settings (optimized for Waveshare 7.3" PhotoPainter)
     eink_width: int = 800
@@ -76,6 +82,7 @@ class Settings:
                 os.getenv("EINK_IDLE_REFRESH_MINUTES", "30"),
             )
         )
+        poster_cache_size = max(1, int(os.getenv("POSTER_CACHE_SIZE", "10")))
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
         eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
         eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
@@ -90,6 +97,7 @@ class Settings:
             fade_speed=fade_speed,
             selected_movies=selected_movies,
             idle_refresh_minutes=idle_refresh_minutes,
+            poster_cache_size=poster_cache_size,
             eink_width=eink_width,
             eink_height=eink_height,
             eink_rotation=eink_rotation,
@@ -127,7 +135,7 @@ class JellyfinClient:
         try:
             response.raise_for_status()
         except requests.HTTPError as exc:
-            raise RuntimeError(
+            raise JellyfinConnectionError(
                 f"Jellyfin HTTP {response.status_code} for {response.url}. Response: {self._response_preview(response)}"
             ) from exc
         return response
@@ -251,9 +259,28 @@ class PosterCoordinator:
         self.settings = settings
         self.last_item_id: Optional[str] = None
         self.active_rotation_index = 0
+        self.poster_cache = PosterCache(settings.poster_cache_size)
 
     def fetch_item(
         self, width: int, height: int, allow_idle_poster: bool = True
+    ) -> Optional[PosterDisplayItem]:
+        try:
+            return self._fetch_online_item(width, height, allow_idle_poster)
+        except (requests.RequestException, JellyfinConnectionError) as exc:
+            logger.warning(
+                "Jellyfin connection unavailable; trying poster cache: %s", exc
+            )
+            cached_item = self.poster_cache.get_fallback(advance=allow_idle_poster)
+            if cached_item is not None:
+                logger.info(
+                    "Using cached poster while Jellyfin is unavailable: '%s'",
+                    cached_item.title,
+                )
+                return cached_item
+            raise
+
+    def _fetch_online_item(
+        self, width: int, height: int, allow_idle_poster: bool
     ) -> Optional[PosterDisplayItem]:
         active_movies = self.client.get_active_movie_sessions()
 
@@ -272,13 +299,15 @@ class PosterCoordinator:
                 f"{movie['user_name']}: {movie['title']}" for movie in active_movies
             )
             logger.info("Active movie sessions (%s): '%s'", users_playing, title)
-            return PosterDisplayItem(
+            item = PosterDisplayItem(
                 item_id=item_id,
                 title=title,
                 image=image,
                 is_playing=True,
                 user_name=user_name,
             )
+            self._cache_item(item)
+            return item
 
         if not allow_idle_poster:
             return None
@@ -292,12 +321,20 @@ class PosterCoordinator:
         )
         self.last_item_id = item_id
         logger.info("Fetched idle poster: '%s'", title)
-        return PosterDisplayItem(
+        item = PosterDisplayItem(
             item_id=item_id,
             title=title,
             image=image,
             is_playing=False,
         )
+        self._cache_item(item)
+        return item
+
+    def _cache_item(self, item: PosterDisplayItem) -> None:
+        try:
+            self.poster_cache.add(item)
+        except Exception as exc:
+            logger.warning("Could not cache poster '%s': %s", item.title, exc)
 
 
 def main() -> int:

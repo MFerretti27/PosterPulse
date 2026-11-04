@@ -176,14 +176,15 @@ class RegularDisplay(BaseDisplay):
                 self._pending_advances -= 1
             allow_idle_poster = (
                 manual_advance
-                or self._connection_lost
                 or self._last_displayed_id is None
                 or self._last_was_playing
                 or now - self._last_refresh_time >= self.idle_refresh_seconds
             )
             item = self.fetch_content_fn(screen_w, screen_h, allow_idle_poster)
-            recovered = self._connection_lost
-            self._connection_lost = False
+            was_connection_lost = self._connection_lost
+            recovered = was_connection_lost and not (item and item.connection_lost)
+            connection_state_changed = bool(item and item.connection_lost) != was_connection_lost
+            self._connection_lost = bool(item and item.connection_lost)
 
             if item is None:
                 if recovered:
@@ -192,7 +193,10 @@ class RegularDisplay(BaseDisplay):
                 return
 
             should_render = (
-                manual_advance or recovered or self._last_displayed_id is None
+                manual_advance
+                or recovered
+                or connection_state_changed
+                or self._last_displayed_id is None
             )
             if item.is_playing != self._last_was_playing:
                 should_render = True
@@ -208,7 +212,11 @@ class RegularDisplay(BaseDisplay):
                 schedule_next()
                 return
 
-            if item.is_playing:
+            if item.connection_lost:
+                self._set_banner_text("Connection Lost")
+                self._show_top_banner()
+                self.status.place_forget()
+            elif item.is_playing:
                 self._set_banner_text("Currently Playing")
                 self._show_top_banner()
                 self.status.place_forget()
