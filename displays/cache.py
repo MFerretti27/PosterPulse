@@ -97,18 +97,20 @@ class PosterCache:
         else:
             selected_index = current_index
 
-        selected = entries[selected_index]
-        self._fallback_item_id = selected["item_id"]
-        try:
-            with Image.open(self.cache_dir / selected["filename"]) as cached_image:
-                image = cached_image.convert("RGB")
-        except (OSError, ValueError) as exc:
-            logger.warning("Could not read cached poster '%s': %s", selected["title"], exc)
-            return None
+        for offset in range(len(entries)):
+            selected = entries[(selected_index + offset) % len(entries)]
+            try:
+                with Image.open(self.cache_dir / selected["filename"]) as cached_image:
+                    image = cached_image.convert("RGB")
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not read cached poster '%s': %s", selected["title"], exc)
+                continue
 
-        return PosterDisplayItem(
-            item_id=selected["item_id"],
-            title=selected["title"],
-            image=image,
-            connection_lost=True,
-        )
+            self._fallback_item_id = selected["item_id"]
+            return PosterDisplayItem(
+                item_id=selected["item_id"],
+                title=selected["title"],
+                image=image,
+                connection_lost=True,
+            )
+        return None
