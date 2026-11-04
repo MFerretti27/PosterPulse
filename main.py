@@ -30,6 +30,8 @@ class Settings:
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     selected_movies: List[str] = field(default_factory=list)
+    media_types: List[str] = field(default_factory=lambda: ["Movie"])
+    genres: List[str] = field(default_factory=list)
     idle_refresh_minutes: int = 30
     poster_cache_size: int = 10
 
@@ -72,6 +74,43 @@ class Settings:
             for title in os.getenv("SELECT_MOVIES", "").split(",")
             if title.strip()
         ]
+        media_type_aliases = {
+            "movie": "Movie",
+            "movies": "Movie",
+            "series": "Series",
+            "tv": "Series",
+            "tv show": "Series",
+            "tv shows": "Series",
+            "tvshow": "Series",
+            "tvshows": "Series",
+        }
+        raw_media_types = os.getenv("MEDIA_TYPES", "Movie").split(",")
+        requested_media_types = [
+            value.strip().casefold() for value in raw_media_types if value.strip()
+        ]
+        unknown_media_types = [
+            value for value in requested_media_types if value not in media_type_aliases
+        ]
+        if unknown_media_types:
+            raise ValueError(
+                "Unsupported MEDIA_TYPES value(s): "
+                + ", ".join(unknown_media_types)
+                + ". Use Movie, Series, or both."
+            )
+        media_types = list(
+            dict.fromkeys(
+                media_type_aliases[value.strip().casefold()]
+                for value in raw_media_types
+                if value.strip()
+            )
+        )
+        if not media_types:
+            raise ValueError("MEDIA_TYPES must include Movie, Series, or both")
+        genres = [
+            genre.strip()
+            for genre in os.getenv("GENRES", "").split(",")
+            if genre.strip()
+        ]
 
         eink_width = int(os.getenv("EINK_WIDTH", "800"))
         eink_height = int(os.getenv("EINK_HEIGHT", "480"))
@@ -96,6 +135,8 @@ class Settings:
             fullscreen=fullscreen,
             fade_speed=fade_speed,
             selected_movies=selected_movies,
+            media_types=media_types,
+            genres=genres,
             idle_refresh_minutes=idle_refresh_minutes,
             poster_cache_size=poster_cache_size,
             eink_width=eink_width,
@@ -109,6 +150,8 @@ class Settings:
 class JellyfinClient:
     def __init__(self, settings: Settings) -> None:
         self.base_url = settings.jellyfin_url
+        self.media_types = settings.media_types
+        self.genres = {genre.casefold() for genre in settings.genres}
         self.user_id: Optional[str] = None
         self.session = requests.Session()
         self.session.headers.update(
@@ -173,8 +216,8 @@ class JellyfinClient:
         items_url = f"{self.base_url}/Users/{user_id}/Items"
         params = {
             "Recursive": "true",
-            "IncludeItemTypes": "Movie",
-            "Fields": "PrimaryImageAspectRatio",
+            "IncludeItemTypes": ",".join(self.media_types),
+            "Fields": "PrimaryImageAspectRatio,Genres",
             "HasPrimaryImage": "true",
             "Limit": "500",
         }
@@ -184,7 +227,21 @@ class JellyfinClient:
         items = payload.get("Items", [])
 
         if not items:
-            raise RuntimeError("No movies with posters were found in Jellyfin")
+            raise RuntimeError("No media with posters were found in Jellyfin")
+
+        if self.genres:
+            items = [
+                item
+                for item in items
+                if self.genres.intersection(
+                    str(genre).casefold()
+                    for genre in (item.get("Genres") or [])
+                )
+            ]
+            if not items:
+                raise RuntimeError(
+                    "No media with posters matched the configured GENRES."
+                )
 
         if selected_movies:
             wanted_titles = {title.casefold() for title in selected_movies}
@@ -209,7 +266,7 @@ class JellyfinClient:
         )
         return item_id, chosen.get("Name", "Unknown Title"), image
 
-    def get_active_movie_sessions(self) -> List[Dict[str, str]]:
+    def get_active_media_sessions(self) -> List[Dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
         response = self._get(
             sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15
@@ -219,23 +276,46 @@ class JellyfinClient:
 
         for session in sessions:
             now_playing = session.get("NowPlayingItem") or {}
-            if now_playing.get("Type") != "Movie":
+            media_type = now_playing.get("Type")
+            if media_type == "Movie" and "Movie" in self.media_types:
+                item_id = now_playing.get("Id")
+                title = now_playing.get("Name", "Unknown Title")
+                genre_item = now_playing
+            elif media_type == "Episode" and "Series" in self.media_types:
+                item_id = now_playing.get("SeriesId") or now_playing.get("Id")
+                title = now_playing.get("SeriesName") or now_playing.get("Name", "Unknown Title")
+                genre_item = now_playing
+            else:
+                continue
+            if not item_id:
                 continue
 
-            item_id = now_playing.get("Id")
-            if not item_id:
+            if self.genres and not self._matches_genres(genre_item, item_id):
                 continue
 
             active_movies.append(
                 {
                     "session_id": str(session.get("Id", "unknown-session")),
                     "item_id": str(item_id),
-                    "title": str(now_playing.get("Name", "Unknown Title")),
+                    "title": str(title),
                     "user_name": str(session.get("UserName", "Unknown User")),
                 }
             )
 
         return active_movies
+
+    def _matches_genres(self, item: dict, item_id: str) -> bool:
+        item_genres = item.get("Genres")
+        if not item_genres:
+            response = self._get(
+                f"{self.base_url}/Items/{item_id}",
+                params={"Fields": "Genres"},
+                timeout=10,
+            )
+            item_genres = response.json().get("Genres", [])
+        return bool(
+            self.genres.intersection(str(genre).casefold() for genre in item_genres)
+        )
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int
@@ -282,7 +362,7 @@ class PosterCoordinator:
     def _fetch_online_item(
         self, width: int, height: int, allow_idle_poster: bool
     ) -> Optional[PosterDisplayItem]:
-        active_movies = self.client.get_active_movie_sessions()
+        active_movies = self.client.get_active_media_sessions()
 
         if active_movies:
             selected = active_movies[self.active_rotation_index % len(active_movies)]
@@ -298,7 +378,7 @@ class PosterCoordinator:
             users_playing = ", ".join(
                 f"{movie['user_name']}: {movie['title']}" for movie in active_movies
             )
-            logger.info("Active movie sessions (%s): '%s'", users_playing, title)
+            logger.info("Active media sessions (%s): '%s'", users_playing, title)
             item = PosterDisplayItem(
                 item_id=item_id,
                 title=title,

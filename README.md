@@ -7,8 +7,9 @@ It supports two distinct display modes:
 2. **E-Ink Display (Waveshare RPi Zero PhotoPainter 7.3")**: A lightweight, headless e-Paper driver with 6-color Floyd-Steinberg dithering, sleep-mode power management, and smart refresh logic tailored to e-Paper refresh limits.
 
 Behavior:
-- If users are actively watching movies, it rotates through each currently watched movie poster.
-- If nobody is actively watching a movie, it shows posters from `SELECT_MOVIES` (if configured) or random posters from your library.
+- If users are actively watching configured media types, it displays their movie or TV-series poster.
+- If nobody is actively watching, it shows posters from `SELECT_MOVIES` (if configured) or random posters from the configured library media types.
+- `MEDIA_TYPES` selects movies, TV series, or both; `GENRES` optionally limits poster selection to items matching any listed genre.
 - While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
 - Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
@@ -42,6 +43,8 @@ FADE_SPEED=8
 REFRESH_SECONDS=30
 IDLE_REFRESH_MINUTES=30
 POSTER_CACHE_SIZE=10
+MEDIA_TYPES=Movie,Series
+GENRES=Action,Comedy
 ```
 
 #### Automated LCD setup
