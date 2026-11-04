@@ -1,7 +1,7 @@
 import logging
 import time
 from typing import Callable, Optional
-from PIL import Image, ImageTk # pyright: ignore[reportMissingImports]
+from PIL import Image, ImageDraw, ImageFont, ImageTk # pyright: ignore[reportMissingImports]
 import tkinter as tk
 
 from displays.base import BaseDisplay, PosterDisplayItem
@@ -51,15 +51,31 @@ class RegularDisplay(BaseDisplay):
         if self.fullscreen:
             self.root.attributes("-fullscreen", True)
 
+        banner_text = "Currently Playing"
+        banner_font = ImageFont.load_default(size=26)
+        text_bounds = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox(
+            (0, 0), banner_text, font=banner_font
+        )
+        self._top_banner_width = 64
+        banner_width = self._top_banner_width
+        screen_height = self.root.winfo_screenheight()
+        banner = Image.new(
+            "RGB", (screen_height, banner_width), "#8B0000"
+        )
+        text_width = text_bounds[2] - text_bounds[0]
+        text_height = text_bounds[3] - text_bounds[1]
+        ImageDraw.Draw(banner).text(
+            (
+                (screen_height - text_width) // 2 - text_bounds[0],
+                (banner_width - text_height) // 2 - text_bounds[1],
+            ),
+            banner_text,
+            fill="white",
+            font=banner_font,
+        )
+        self._top_banner_image = ImageTk.PhotoImage(banner.rotate(90, expand=True))
         self.top_banner = tk.Label(
-            self.root,
-            text="Currently Playing",
-            anchor="center",
-            bg="#8B0000",
-            fg="white",
-            padx=10,
-            pady=8,
-            font=("Helvetica", 18, "bold"),
+            self.root, image=self._top_banner_image, bg="#8B0000", borderwidth=0
         )
         self.banner_visible = False
 
@@ -124,7 +140,9 @@ class RegularDisplay(BaseDisplay):
 
     def _show_top_banner(self) -> None:
         if not self.banner_visible:
-            self.top_banner.place(x=0, y=0, relwidth=1.0)
+            self.top_banner.place(
+                x=0, y=0, width=self._top_banner_width, relheight=1.0
+            )
             self.top_banner.lift()
             self.banner_visible = True
 
@@ -180,10 +198,8 @@ class RegularDisplay(BaseDisplay):
                 return
 
             if item.is_playing:
-                status_text = f"Watching now: {item.user_name or 'User'} - {item.title}"
                 self._show_top_banner()
-                self.status.configure(text=status_text)
-                self.status.place(x=0, rely=1.0, anchor="sw", relwidth=1.0)
+                self.status.place_forget()
             else:
                 self._hide_top_banner()
                 self.status.place_forget()
