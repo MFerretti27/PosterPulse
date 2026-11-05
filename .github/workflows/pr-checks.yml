@@ -44,11 +44,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
 
-      - name: Run Ruff lint (with auto-fix)
-        run: ruff check . --fix
+      - name: Check Ruff lint
+        run: ruff check .
 
-      - name: Format with Ruff (optional if replacing Black)
-        run: ruff format .
+      - name: Check Ruff formatting
+        run: ruff format --check .
 
   spell-check:
     name: 🔤 Spell Check

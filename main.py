@@ -159,14 +159,10 @@ class Settings:
             for name in holiday_names:
                 key = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
                 genre_value = (
-                    os.getenv(f"{key}_GENRE")
-                    or os.getenv(f"HOLIDAY_{key}_GENRE")
-                    or ""
+                    os.getenv(f"{key}_GENRE") or os.getenv(f"HOLIDAY_{key}_GENRE") or ""
                 )
                 days_value = (
-                    os.getenv(f"{key}_DAYS")
-                    or os.getenv(f"HOLIDAY_{key}_DAYS")
-                    or ""
+                    os.getenv(f"{key}_DAYS") or os.getenv(f"HOLIDAY_{key}_DAYS") or ""
                 )
                 holiday_genres = [
                     genre.strip() for genre in genre_value.split(",") if genre.strip()
@@ -240,9 +236,7 @@ class JellyfinClient:
         self.base_url = settings.jellyfin_url
         self.media_types = settings.media_types
         self.genres = {genre.casefold() for genre in settings.genres}
-        self.excluded_genres = {
-            genre.casefold() for genre in settings.excluded_genres
-        }
+        self.excluded_genres = {genre.casefold() for genre in settings.excluded_genres}
         self.top_rated_movie_count = settings.top_rated_movie_count
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
@@ -353,8 +347,7 @@ class JellyfinClient:
                 item
                 for item in items
                 if not self.excluded_genres.intersection(
-                    str(genre).casefold()
-                    for genre in (item.get("Genres") or [])
+                    str(genre).casefold() for genre in (item.get("Genres") or [])
                 )
             ]
             if not items:
@@ -366,9 +359,8 @@ class JellyfinClient:
             items = [
                 item
                 for item in items
-            if genres.intersection(
-                    str(genre).casefold()
-                    for genre in (item.get("Genres") or [])
+                if genres.intersection(
+                    str(genre).casefold() for genre in (item.get("Genres") or [])
                 )
             ]
             if not items:
@@ -448,14 +440,14 @@ class JellyfinClient:
         """Use active holiday genres, otherwise the standard GENRES setting."""
         if self.holiday_mode:
             today = current_date or date.today()
-            active_rules = [rule for rule in self.holiday_rules if rule.is_active(today)]
+            active_rules = [
+                rule for rule in self.holiday_rules if rule.is_active(today)
+            ]
             if active_rules:
                 names = ", ".join(rule.name for rule in active_rules)
                 logger.info("Holiday genre mode active: %s", names)
                 return {
-                    genre.casefold()
-                    for rule in active_rules
-                    for genre in rule.genres
+                    genre.casefold() for rule in active_rules for genre in rule.genres
                 }
         return self.genres
 
@@ -476,14 +468,18 @@ class JellyfinClient:
                 genre_item = now_playing
             elif media_type == "Episode" and "Series" in self.media_types:
                 item_id = now_playing.get("SeriesId") or now_playing.get("Id")
-                title = now_playing.get("SeriesName") or now_playing.get("Name", "Unknown Title")
+                title = now_playing.get("SeriesName") or now_playing.get(
+                    "Name", "Unknown Title"
+                )
                 genre_item = now_playing
             else:
                 continue
             if not item_id:
                 continue
 
-            if self.genres and not self._matches_genres(genre_item, item_id):
+            if (
+                self._current_genres() or self.excluded_genres
+            ) and not self._matches_genres(genre_item, item_id):
                 continue
 
             active_movies.append(

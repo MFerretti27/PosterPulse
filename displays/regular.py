@@ -1,7 +1,7 @@
 import logging
 import time
 from typing import Callable, Optional
-from PIL import Image, ImageDraw, ImageFont, ImageTk # pyright: ignore[reportMissingImports]
+from PIL import Image, ImageDraw, ImageFont, ImageTk  # pyright: ignore[reportMissingImports]
 import tkinter as tk
 
 from displays.base import BaseDisplay, PosterDisplayItem
@@ -120,9 +120,7 @@ class RegularDisplay(BaseDisplay):
 
     def _show_top_banner(self) -> None:
         if not self.banner_visible:
-            self.top_banner.place(
-                x=0, y=0, width=self._top_banner_width, relheight=1.0
-            )
+            self.top_banner.place(x=0, y=0, width=self._top_banner_width, relheight=1.0)
             self.top_banner.lift()
             self.banner_visible = True
 
@@ -183,7 +181,9 @@ class RegularDisplay(BaseDisplay):
             item = self.fetch_content_fn(screen_w, screen_h, allow_idle_poster)
             was_connection_lost = self._connection_lost
             recovered = was_connection_lost and not (item and item.connection_lost)
-            connection_state_changed = bool(item and item.connection_lost) != was_connection_lost
+            connection_state_changed = (
+                bool(item and item.connection_lost) != was_connection_lost
+            )
             self._connection_lost = bool(item and item.connection_lost)
 
             if item is None:

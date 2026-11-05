@@ -1,7 +1,7 @@
 import logging
 import time
 from typing import List, Union
-from PIL import Image # pyright: ignore[reportMissingImports]
+from PIL import Image  # pyright: ignore[reportMissingImports]
 from displays.waveshare import epdconfig
 
 logger = logging.getLogger(__name__)

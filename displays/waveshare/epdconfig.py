@@ -132,9 +132,7 @@ class RaspberryPi:
         if self.gpio_lib == "RPi.GPIO" and self._gpio is not None:
             self._gpio.output(self.rst_pin, 0)
             self._gpio.output(self.dc_pin, 0)
-            self._gpio.cleanup(
-                [self.rst_pin, self.dc_pin, self.busy_pin, self.pwr_pin]
-            )
+            self._gpio.cleanup([self.rst_pin, self.dc_pin, self.busy_pin, self.pwr_pin])
         elif self.gpio_lib == "gpiozero":
             for dev in self._gpiozero_devs.values():
                 try:

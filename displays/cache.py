@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 class PosterCache:
     def __init__(self, max_items: int = 10, cache_dir: Optional[Path] = None) -> None:
         self.max_items = max(1, max_items)
-        self.cache_dir = cache_dir or Path(__file__).resolve().parent.parent / "poster_cache"
+        self.cache_dir = (
+            cache_dir or Path(__file__).resolve().parent.parent / "poster_cache"
+        )
         self.manifest_path = self.cache_dir / "manifest.json"
         self._fallback_item_id: Optional[str] = None
 
@@ -50,17 +52,22 @@ class PosterCache:
             and image_path.is_file()
         ):
             return
-        cached_file_exists = any(
-            entry["item_id"] == item.item_id and entry["filename"] == filename
-            for entry in entries
-        ) and image_path.is_file()
+        cached_file_exists = (
+            any(
+                entry["item_id"] == item.item_id and entry["filename"] == filename
+                for entry in entries
+            )
+            and image_path.is_file()
+        )
         if not cached_file_exists:
             temporary_path = image_path.with_suffix(".jpg.tmp")
             item.image.convert("RGB").save(temporary_path, format="JPEG", quality=92)
             os.replace(temporary_path, image_path)
 
         entries = [entry for entry in entries if entry["item_id"] != item.item_id]
-        entries.insert(0, {"item_id": item.item_id, "title": item.title, "filename": filename})
+        entries.insert(
+            0, {"item_id": item.item_id, "title": item.title, "filename": filename}
+        )
         entries = entries[: self.max_items]
 
         temp_manifest = self.manifest_path.with_suffix(".json.tmp")
@@ -103,7 +110,9 @@ class PosterCache:
                 with Image.open(self.cache_dir / selected["filename"]) as cached_image:
                     image = cached_image.convert("RGB")
             except (OSError, ValueError) as exc:
-                logger.warning("Could not read cached poster '%s': %s", selected["title"], exc)
+                logger.warning(
+                    "Could not read cached poster '%s': %s", selected["title"], exc
+                )
                 continue
 
             self._fallback_item_id = selected["item_id"]

@@ -1,7 +1,7 @@
 import abc
 from dataclasses import dataclass
 from typing import Optional
-from PIL import Image # pyright: ignore[reportMissingImports]
+from PIL import Image  # pyright: ignore[reportMissingImports]
 
 
 @dataclass
