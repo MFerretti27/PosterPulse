@@ -49,6 +49,7 @@ class Settings:
     media_types: List[str] = field(default_factory=lambda: ["Movie"])
     genres: List[str] = field(default_factory=list)
     excluded_genres: List[str] = field(default_factory=list)
+    top_rated_movie_count: int = 0
     holiday_mode: bool = False
     holiday_rules: List[HolidayRule] = field(default_factory=list)
     idle_refresh_minutes: int = 30
@@ -135,6 +136,11 @@ class Settings:
             for genre in os.getenv("EXCLUDED_GENRES", "").split(",")
             if genre.strip()
         ]
+        top_rated_movie_count = int(
+            os.getenv("TOP_RATED_MOVIE_COUNT", os.getenv("TOP_IMDB_COUNT", "0"))
+        )
+        if top_rated_movie_count < 0:
+            raise ValueError("TOP_RATED_MOVIE_COUNT cannot be negative")
         holiday_mode = os.getenv("HOLIDAY_MODE", "false").strip().casefold() in {
             "1",
             "true",
@@ -216,6 +222,7 @@ class Settings:
             media_types=media_types,
             genres=genres,
             excluded_genres=excluded_genres,
+            top_rated_movie_count=top_rated_movie_count,
             holiday_mode=holiday_mode,
             holiday_rules=holiday_rules,
             idle_refresh_minutes=idle_refresh_minutes,
@@ -236,6 +243,7 @@ class JellyfinClient:
         self.excluded_genres = {
             genre.casefold() for genre in settings.excluded_genres
         }
+        self.top_rated_movie_count = settings.top_rated_movie_count
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
         self.user_id: Optional[str] = None
@@ -297,6 +305,13 @@ class JellyfinClient:
         last_item_id: Optional[str] = None,
         selected_movies: Optional[List[str]] = None,
     ):
+        if self.top_rated_movie_count > 0:
+            return self.get_top_rated_movie_image(
+                max_width=max_width,
+                max_height=max_height,
+                last_item_id=last_item_id,
+            )
+
         genres = self._current_genres()
         user_id = self.resolve_user_id()
 
@@ -383,6 +398,51 @@ class JellyfinClient:
             item_id=item_id, max_width=max_width, max_height=max_height
         )
         return item_id, chosen.get("Name", "Unknown Title"), image
+
+    def get_top_rated_movie_image(
+        self,
+        max_width: int,
+        max_height: int,
+        last_item_id: Optional[str] = None,
+    ) -> tuple[str, str, Image.Image]:
+        """Choose randomly among Jellyfin's highest CommunityRating movies."""
+        user_id = self.resolve_user_id()
+        response = self._get(
+            f"{self.base_url}/Users/{user_id}/Items",
+            params={
+                "Recursive": "true",
+                "IncludeItemTypes": "Movie",
+                "Fields": "CommunityRating,ProviderIds",
+                "HasPrimaryImage": "true",
+                "SortBy": "CommunityRating",
+                "SortOrder": "Descending",
+                "Limit": str(self.top_rated_movie_count),
+            },
+            timeout=15,
+        )
+        items = [
+            item
+            for item in response.json().get("Items", [])
+            if item.get("Id") and item.get("CommunityRating") is not None
+        ]
+        if not items:
+            raise RuntimeError(
+                "TOP_RATED_MOVIE_COUNT is enabled, but Jellyfin returned no rated movies with posters."
+            )
+
+        candidates = [item for item in items if item.get("Id") != last_item_id] or items
+        chosen = random.choice(candidates)
+        item_id = str(chosen["Id"])
+        title = str(chosen.get("Name", "Unknown Title"))
+        image = self.get_item_poster_image(
+            item_id=item_id, max_width=max_width, max_height=max_height
+        )
+        logger.info(
+            "Selected top-rated movie: '%s' (Jellyfin community rating: %s)",
+            title,
+            chosen.get("CommunityRating"),
+        )
+        return item_id, title, image
 
     def _current_genres(self, current_date: Optional[date] = None) -> set[str]:
         """Use active holiday genres, otherwise the standard GENRES setting."""
