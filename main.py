@@ -48,6 +48,7 @@ class Settings:
     selected_movies: List[str] = field(default_factory=list)
     media_types: List[str] = field(default_factory=lambda: ["Movie"])
     genres: List[str] = field(default_factory=list)
+    excluded_genres: List[str] = field(default_factory=list)
     holiday_mode: bool = False
     holiday_rules: List[HolidayRule] = field(default_factory=list)
     idle_refresh_minutes: int = 30
@@ -127,6 +128,11 @@ class Settings:
         genres = [
             genre.strip()
             for genre in os.getenv("GENRES", "").split(",")
+            if genre.strip()
+        ]
+        excluded_genres = [
+            genre.strip()
+            for genre in os.getenv("EXCLUDED_GENRES", "").split(",")
             if genre.strip()
         ]
         holiday_mode = os.getenv("HOLIDAY_MODE", "false").strip().casefold() in {
@@ -209,6 +215,7 @@ class Settings:
             selected_movies=selected_movies,
             media_types=media_types,
             genres=genres,
+            excluded_genres=excluded_genres,
             holiday_mode=holiday_mode,
             holiday_rules=holiday_rules,
             idle_refresh_minutes=idle_refresh_minutes,
@@ -226,6 +233,9 @@ class JellyfinClient:
         self.base_url = settings.jellyfin_url
         self.media_types = settings.media_types
         self.genres = {genre.casefold() for genre in settings.genres}
+        self.excluded_genres = {
+            genre.casefold() for genre in settings.excluded_genres
+        }
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
         self.user_id: Optional[str] = None
@@ -323,6 +333,20 @@ class JellyfinClient:
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
 
+        if self.excluded_genres:
+            items = [
+                item
+                for item in items
+                if not self.excluded_genres.intersection(
+                    str(genre).casefold()
+                    for genre in (item.get("Genres") or [])
+                )
+            ]
+            if not items:
+                raise RuntimeError(
+                    "All media with posters matched the configured EXCLUDED_GENRES."
+                )
+
         if genres:
             items = [
                 item
@@ -414,20 +438,21 @@ class JellyfinClient:
         return active_movies
 
     def _matches_genres(self, item: dict, item_id: str) -> bool:
-        genres = self._current_genres()
-        if not genres:
-            return True
         item_genres = item.get("Genres")
-        if not item_genres:
+        if not item_genres and (
+            self.genres or self.excluded_genres or self.holiday_mode
+        ):
             response = self._get(
                 f"{self.base_url}/Items/{item_id}",
                 params={"Fields": "Genres"},
                 timeout=10,
             )
             item_genres = response.json().get("Genres", [])
-        return bool(
-            genres.intersection(str(genre).casefold() for genre in item_genres or [])
-        )
+        normalized_genres = {str(genre).casefold() for genre in item_genres or []}
+        if self.excluded_genres.intersection(normalized_genres):
+            return False
+        genres = self._current_genres()
+        return not genres or bool(genres.intersection(normalized_genres))
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int

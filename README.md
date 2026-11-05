@@ -9,7 +9,7 @@ It supports two distinct display modes:
 Behavior:
 - If users are actively watching configured media types, it displays their movie or TV-series poster.
 - If nobody is actively watching, it shows posters from `SELECT_MOVIES` (if configured) or random posters from the configured library media types.
-- `MEDIA_TYPES` selects movies, TV series, or both; `GENRES` optionally limits poster selection to items matching any listed genre.
+- `MEDIA_TYPES` selects movies, TV series, or both; `GENRES` optionally limits poster selection to items matching any listed genre; `EXCLUDED_GENRES` always filters out matching genres.
 - When `HOLIDAY_MODE=true`, the matching holiday's genre replaces `GENRES` for its configured date range. Holiday date ranges repeat yearly and may cross New Year.
 - While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
 - Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
@@ -46,6 +46,7 @@ IDLE_REFRESH_MINUTES=30
 POSTER_CACHE_SIZE=10
 MEDIA_TYPES=Movie,Series
 GENRES=Action,Comedy
+EXCLUDED_GENRES=Documentary,News
 HOLIDAY_MODE=true
 HOLIDAYS=Christmas,Independence Day,Halloween,Thanksgiving
 CHRISTMAS_GENRE=Christmas
