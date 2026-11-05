@@ -1,7 +1,8 @@
 import logging
 import signal
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
+
 from PIL import Image, ImageDraw, ImageFont  # pyright: ignore[reportMissingImports]
 
 from displays.base import BaseDisplay, PosterDisplayItem
@@ -15,13 +16,13 @@ class EInkDisplay(BaseDisplay):
 
     def __init__(
         self,
-        fetch_content_fn: Callable[[int, int, bool], Optional[PosterDisplayItem]],
+        fetch_content_fn: Callable[[int, int, bool], PosterDisplayItem | None],
         width: int = 800,
         height: int = 480,
         rotation: int = 0,
         idle_refresh_minutes: int = 15,
         poll_interval_seconds: int = 15,
-        preview_path: Optional[str] = "eink_preview.png",
+        preview_path: str | None = "eink_preview.png",
         pwr_pin: int = 27,
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
@@ -34,17 +35,17 @@ class EInkDisplay(BaseDisplay):
         self.pwr_pin = pwr_pin
 
         self.running = False
-        self.last_displayed_id: Optional[str] = None
+        self.last_displayed_id: str | None = None
         self.last_refresh_time: float = 0.0
         self.last_was_playing: bool = False
         self.connection_lost = False
         self.last_display_connection_lost = False
-        self.last_good_item: Optional[PosterDisplayItem] = None
+        self.last_good_item: PosterDisplayItem | None = None
         self.hardware_update_failed = False
 
         # Initialize hardware driver
         self.is_hardware_available = False
-        self.epd: Optional[epd7in3e.EPD] = None
+        self.epd: epd7in3e.EPD | None = None
         self._init_driver()
 
     def _init_driver(self) -> None:
@@ -70,7 +71,7 @@ class EInkDisplay(BaseDisplay):
                     "Rendered frames will be saved to '%s'.",
                     self.preview_path,
                 )
-        except Exception as exc:  # noqa: BLE001 - hardware drivers vary by platform
+        except Exception as exc:
             logger.warning(
                 "Failed to initialize e-Paper hardware (%s). Operating in preview mode.",
                 exc,
@@ -168,7 +169,7 @@ class EInkDisplay(BaseDisplay):
                 self.epd.display(prepared)
                 logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
-            except Exception:  # noqa: BLE001 - contain vendor-driver failures
+            except Exception:
                 logger.exception("Hardware e-Paper update failed")
                 self.hardware_update_failed = True
                 return False
@@ -259,7 +260,7 @@ class EInkDisplay(BaseDisplay):
                 elif recovered and self.last_good_item is not None:
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
-            except Exception:  # noqa: BLE001 - keep the polling loop alive
+            except Exception:
                 logger.exception("Error in e-ink loop")
                 if not self.connection_lost or self.hardware_update_failed:
                     self.connection_lost = True
@@ -291,7 +292,7 @@ class EInkDisplay(BaseDisplay):
         if self.is_hardware_available and self.epd is not None:
             try:
                 self.epd.sleep()
-            except Exception:  # noqa: BLE001 - best-effort hardware shutdown
+            except Exception:
                 logger.warning(
                     "Could not put e-Paper display into sleep", exc_info=True
                 )

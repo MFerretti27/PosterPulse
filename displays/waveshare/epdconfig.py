@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class RaspberryPi:
         self.pwr_pin = pwr_pin
 
         self.spi: Any = None
-        self.gpio_lib: Optional[str] = None
+        self.gpio_lib: str | None = None
         self._gpio: Any = None
         self._gpiozero_devs: dict = {}
 
@@ -56,11 +56,11 @@ class RaspberryPi:
     def delay_ms(self, delaytime: int) -> None:
         time.sleep(delaytime / 1000.0)
 
-    def spi_writebyte(self, data: List[int]) -> None:
+    def spi_writebyte(self, data: list[int]) -> None:
         if self.spi is not None:
             self.spi.writebytes(data)
 
-    def spi_writebyte2(self, data: List[int]) -> None:
+    def spi_writebyte2(self, data: list[int]) -> None:
         if self.spi is not None:
             # Transfer in chunks to prevent SPI buffer overflow
             chunk_size = 4096
@@ -84,9 +84,9 @@ class RaspberryPi:
             self._gpiozero_devs[self.busy_pin] = gpiozero.Button(
                 self.busy_pin, pull_up=None, active_state=True
             )
-        except Exception:  # noqa: BLE001 - try alternate GPIO backend on any init failure
+        except Exception:
             try:
-                import RPi.GPIO as GPIO  # type: ignore[import]
+                from RPi import GPIO  # type: ignore[import]
 
                 self.gpio_lib = "RPi.GPIO"
                 self._gpio = GPIO
@@ -97,7 +97,7 @@ class RaspberryPi:
                 self._gpio.setup(self.cs_pin, self._gpio.OUT)
                 self._gpio.setup(self.pwr_pin, self._gpio.OUT)
                 self._gpio.setup(self.busy_pin, self._gpio.IN)
-            except Exception as exc:  # noqa: BLE001 - fall back when GPIO init fails
+            except Exception as exc:
                 logger.warning(
                     "GPIO library not available (gpiozero / RPi.GPIO): %s. Falling back to mock.",
                     exc,
@@ -111,7 +111,7 @@ class RaspberryPi:
             self.spi = spidev.SpiDev(0, 0)
             self.spi.max_speed_hz = 4000000
             self.spi.mode = 0b00
-        except Exception as exc:  # noqa: BLE001 - SPI is optional outside the Pi
+        except Exception as exc:
             logger.warning("spidev not available: %s. Falling back to mock SPI.", exc)
             self.spi = None
 
@@ -126,7 +126,7 @@ class RaspberryPi:
         if self.spi is not None:
             try:
                 self.spi.close()
-            except Exception:  # noqa: BLE001 - continue cleanup after close failure
+            except Exception:
                 logger.warning("Could not close SPI device", exc_info=True)
 
         if self.gpio_lib == "RPi.GPIO" and self._gpio is not None:
@@ -137,7 +137,7 @@ class RaspberryPi:
             for dev in self._gpiozero_devs.values():
                 try:
                     dev.close()
-                except Exception:  # noqa: BLE001 - close remaining GPIO devices
+                except Exception:
                     logger.warning("Could not close GPIO device", exc_info=True)
             self._gpiozero_devs.clear()
 

@@ -6,7 +6,6 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Dict, List, Optional
 
 import requests  # type: ignore[import]
 from dotenv import load_dotenv  # type: ignore[import]
@@ -25,7 +24,7 @@ class JellyfinConnectionError(RuntimeError):
 @dataclass(frozen=True)
 class HolidayRule:
     name: str
-    genres: List[str]
+    genres: list[str]
     start_month_day: tuple[int, int]
     end_month_day: tuple[int, int]
 
@@ -45,13 +44,13 @@ class Settings:
     background_color: str = "black"
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
-    selected_movies: List[str] = field(default_factory=list)
-    media_types: List[str] = field(default_factory=lambda: ["Movie"])
-    genres: List[str] = field(default_factory=list)
-    excluded_genres: List[str] = field(default_factory=list)
+    selected_movies: list[str] = field(default_factory=list)
+    media_types: list[str] = field(default_factory=lambda: ["Movie"])
+    genres: list[str] = field(default_factory=list)
+    excluded_genres: list[str] = field(default_factory=list)
     top_rated_movie_count: int = 0
     holiday_mode: bool = False
-    holiday_rules: List[HolidayRule] = field(default_factory=list)
+    holiday_rules: list[HolidayRule] = field(default_factory=list)
     idle_refresh_minutes: int = 30
     poster_cache_size: int = 10
 
@@ -59,7 +58,7 @@ class Settings:
     eink_width: int = 800
     eink_height: int = 480
     eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
-    eink_preview_path: Optional[str] = "eink_preview.png"
+    eink_preview_path: str | None = "eink_preview.png"
     eink_pwr_pin: int = 27  # BCM 27 on Waveshare PhotoPainter PCB
 
     @classmethod
@@ -152,7 +151,7 @@ class Settings:
             for name in os.getenv("HOLIDAYS", "").split(",")
             if name.strip()
         ]
-        holiday_rules: List[HolidayRule] = []
+        holiday_rules: list[HolidayRule] = []
         if holiday_mode:
             if not holiday_names:
                 raise ValueError("HOLIDAY_MODE is enabled but HOLIDAYS is empty.")
@@ -203,7 +202,7 @@ class Settings:
         )
         poster_cache_size = max(1, int(os.getenv("POSTER_CACHE_SIZE", "10")))
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
-        eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
+        eink_preview_path: str | None = raw_preview if raw_preview.strip() else None
         eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
 
         return cls(
@@ -240,7 +239,7 @@ class JellyfinClient:
         self.top_rated_movie_count = settings.top_rated_movie_count
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
-        self.user_id: Optional[str] = None
+        self.user_id: str | None = None
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -260,7 +259,7 @@ class JellyfinClient:
         return body or "<empty body>"
 
     def _get(
-        self, url: str, *, params: Optional[dict] = None, timeout: int = 10
+        self, url: str, *, params: dict | None = None, timeout: int = 10
     ) -> requests.Response:
         response = self.session.get(url, params=params, timeout=timeout)
         try:
@@ -296,8 +295,8 @@ class JellyfinClient:
         self,
         max_width: int,
         max_height: int,
-        last_item_id: Optional[str] = None,
-        selected_movies: Optional[List[str]] = None,
+        last_item_id: str | None = None,
+        selected_movies: list[str] | None = None,
     ):
         if self.top_rated_movie_count > 0:
             return self.get_top_rated_movie_image(
@@ -395,7 +394,7 @@ class JellyfinClient:
         self,
         max_width: int,
         max_height: int,
-        last_item_id: Optional[str] = None,
+        last_item_id: str | None = None,
     ) -> tuple[str, str, Image.Image]:
         """Choose randomly among Jellyfin's highest CommunityRating movies."""
         user_id = self.resolve_user_id()
@@ -436,7 +435,7 @@ class JellyfinClient:
         )
         return item_id, title, image
 
-    def _current_genres(self, current_date: Optional[date] = None) -> set[str]:
+    def _current_genres(self, current_date: date | None = None) -> set[str]:
         """Use active holiday genres, otherwise the standard GENRES setting."""
         if self.holiday_mode:
             today = current_date or date.today()
@@ -451,13 +450,13 @@ class JellyfinClient:
                 }
         return self.genres
 
-    def get_active_media_sessions(self) -> List[Dict[str, str]]:
+    def get_active_media_sessions(self) -> list[dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
         response = self._get(
             sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15
         )
         sessions = response.json()
-        active_movies: List[Dict[str, str]] = []
+        active_movies: list[dict[str, str]] = []
 
         for session in sessions:
             now_playing = session.get("NowPlayingItem") or {}
@@ -530,13 +529,13 @@ class PosterCoordinator:
     def __init__(self, client: JellyfinClient, settings: Settings) -> None:
         self.client = client
         self.settings = settings
-        self.last_item_id: Optional[str] = None
+        self.last_item_id: str | None = None
         self.active_rotation_index = 0
         self.poster_cache = PosterCache(settings.poster_cache_size)
 
     def fetch_item(
         self, width: int, height: int, allow_idle_poster: bool = True
-    ) -> Optional[PosterDisplayItem]:
+    ) -> PosterDisplayItem | None:
         try:
             return self._fetch_online_item(width, height, allow_idle_poster)
         except (requests.RequestException, JellyfinConnectionError) as exc:
@@ -554,7 +553,7 @@ class PosterCoordinator:
 
     def _fetch_online_item(
         self, width: int, height: int, allow_idle_poster: bool
-    ) -> Optional[PosterDisplayItem]:
+    ) -> PosterDisplayItem | None:
         active_movies = self.client.get_active_media_sessions()
 
         if active_movies:

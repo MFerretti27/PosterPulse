@@ -1,7 +1,8 @@
 import logging
 import time
-from typing import List, Union
+
 from PIL import Image  # pyright: ignore[reportMissingImports]
+
 from displays.waveshare import epdconfig
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ class EPD:
         self.config.spi_writebyte([data])
         self.config.digital_write(self.cs_pin, 1)
 
-    def send_data2(self, data: List[int]) -> None:
+    def send_data2(self, data: list[int]) -> None:
         self.config.digital_write(self.dc_pin, 1)
         self.config.digital_write(self.cs_pin, 0)
         self.config.spi_writebyte2(data)
@@ -183,7 +184,7 @@ class EPD:
         pal_image.putpalette(palette)
         return pal_image
 
-    def getbuffer(self, image: Image.Image) -> List[int]:
+    def getbuffer(self, image: Image.Image) -> list[int]:
         """Convert a PIL image (RGB) into the packed 4-bit buffer for epd7in3e."""
         pal_image = self.create_palette_image()
 
@@ -204,13 +205,13 @@ class EPD:
         buf_raw = bytearray(image_quantized.tobytes("raw"))
 
         # Pack two 4-bit pixels into each byte: (pixel0 << 4) | pixel1
-        buf: List[int] = [0x00] * int(self.width * self.height / 2)
+        buf: list[int] = [0x00] * int(self.width * self.height / 2)
         for idx, i in enumerate(range(0, len(buf_raw), 2)):
             buf[idx] = (buf_raw[i] << 4) + buf_raw[i + 1]
 
         return buf
 
-    def display(self, image_or_buf: Union[Image.Image, List[int]]) -> None:
+    def display(self, image_or_buf: Image.Image | list[int]) -> None:
         if isinstance(image_or_buf, list):
             buf = image_or_buf
         else:

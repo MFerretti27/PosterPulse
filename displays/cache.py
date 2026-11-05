@@ -5,7 +5,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from PIL import Image
 
@@ -15,13 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class PosterCache:
-    def __init__(self, max_items: int = 10, cache_dir: Optional[Path] = None) -> None:
+    def __init__(self, max_items: int = 10, cache_dir: Path | None = None) -> None:
         self.max_items = max(1, max_items)
         self.cache_dir = (
             cache_dir or Path(__file__).resolve().parent.parent / "poster_cache"
         )
         self.manifest_path = self.cache_dir / "manifest.json"
-        self._fallback_item_id: Optional[str] = None
+        self._fallback_item_id: str | None = None
 
     def _entries(self) -> list[dict[str, str]]:
         try:
@@ -79,7 +78,7 @@ class PosterCache:
             if path.name not in keep_files:
                 path.unlink(missing_ok=True)
 
-    def get_fallback(self, *, advance: bool) -> Optional[PosterDisplayItem]:
+    def get_fallback(self, *, advance: bool) -> PosterDisplayItem | None:
         """Return a cached poster, advancing through the recent set when requested."""
         entries = [
             entry
