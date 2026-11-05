@@ -6,7 +6,6 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Dict, List, Optional
 
 import requests  # type: ignore[import]
 from dotenv import load_dotenv  # type: ignore[import]
@@ -25,7 +24,7 @@ class JellyfinConnectionError(RuntimeError):
 @dataclass(frozen=True)
 class HolidayRule:
     name: str
-    genres: List[str]
+    genres: list[str]
     start_month_day: tuple[int, int]
     end_month_day: tuple[int, int]
 
@@ -45,11 +44,13 @@ class Settings:
     background_color: str = "black"
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
-    selected_movies: List[str] = field(default_factory=list)
-    media_types: List[str] = field(default_factory=lambda: ["Movie"])
-    genres: List[str] = field(default_factory=list)
+    selected_movies: list[str] = field(default_factory=list)
+    media_types: list[str] = field(default_factory=lambda: ["Movie"])
+    genres: list[str] = field(default_factory=list)
+    excluded_genres: list[str] = field(default_factory=list)
+    top_rated_movie_count: int = 0
     holiday_mode: bool = False
-    holiday_rules: List[HolidayRule] = field(default_factory=list)
+    holiday_rules: list[HolidayRule] = field(default_factory=list)
     idle_refresh_minutes: int = 30
     poster_cache_size: int = 10
 
@@ -57,7 +58,7 @@ class Settings:
     eink_width: int = 800
     eink_height: int = 480
     eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
-    eink_preview_path: Optional[str] = "eink_preview.png"
+    eink_preview_path: str | None = "eink_preview.png"
     eink_pwr_pin: int = 27  # BCM 27 on Waveshare PhotoPainter PCB
 
     @classmethod
@@ -129,6 +130,16 @@ class Settings:
             for genre in os.getenv("GENRES", "").split(",")
             if genre.strip()
         ]
+        excluded_genres = [
+            genre.strip()
+            for genre in os.getenv("EXCLUDED_GENRES", "").split(",")
+            if genre.strip()
+        ]
+        top_rated_movie_count = int(
+            os.getenv("TOP_RATED_MOVIE_COUNT", os.getenv("TOP_IMDB_COUNT", "0"))
+        )
+        if top_rated_movie_count < 0:
+            raise ValueError("TOP_RATED_MOVIE_COUNT cannot be negative")
         holiday_mode = os.getenv("HOLIDAY_MODE", "false").strip().casefold() in {
             "1",
             "true",
@@ -140,21 +151,17 @@ class Settings:
             for name in os.getenv("HOLIDAYS", "").split(",")
             if name.strip()
         ]
-        holiday_rules: List[HolidayRule] = []
+        holiday_rules: list[HolidayRule] = []
         if holiday_mode:
             if not holiday_names:
                 raise ValueError("HOLIDAY_MODE is enabled but HOLIDAYS is empty.")
             for name in holiday_names:
                 key = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
                 genre_value = (
-                    os.getenv(f"{key}_GENRE")
-                    or os.getenv(f"HOLIDAY_{key}_GENRE")
-                    or ""
+                    os.getenv(f"{key}_GENRE") or os.getenv(f"HOLIDAY_{key}_GENRE") or ""
                 )
                 days_value = (
-                    os.getenv(f"{key}_DAYS")
-                    or os.getenv(f"HOLIDAY_{key}_DAYS")
-                    or ""
+                    os.getenv(f"{key}_DAYS") or os.getenv(f"HOLIDAY_{key}_DAYS") or ""
                 )
                 holiday_genres = [
                     genre.strip() for genre in genre_value.split(",") if genre.strip()
@@ -195,7 +202,7 @@ class Settings:
         )
         poster_cache_size = max(1, int(os.getenv("POSTER_CACHE_SIZE", "10")))
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
-        eink_preview_path: Optional[str] = raw_preview if raw_preview.strip() else None
+        eink_preview_path: str | None = raw_preview if raw_preview.strip() else None
         eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
 
         return cls(
@@ -209,6 +216,8 @@ class Settings:
             selected_movies=selected_movies,
             media_types=media_types,
             genres=genres,
+            excluded_genres=excluded_genres,
+            top_rated_movie_count=top_rated_movie_count,
             holiday_mode=holiday_mode,
             holiday_rules=holiday_rules,
             idle_refresh_minutes=idle_refresh_minutes,
@@ -226,9 +235,11 @@ class JellyfinClient:
         self.base_url = settings.jellyfin_url
         self.media_types = settings.media_types
         self.genres = {genre.casefold() for genre in settings.genres}
+        self.excluded_genres = {genre.casefold() for genre in settings.excluded_genres}
+        self.top_rated_movie_count = settings.top_rated_movie_count
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
-        self.user_id: Optional[str] = None
+        self.user_id: str | None = None
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -248,7 +259,7 @@ class JellyfinClient:
         return body or "<empty body>"
 
     def _get(
-        self, url: str, *, params: Optional[dict] = None, timeout: int = 10
+        self, url: str, *, params: dict | None = None, timeout: int = 10
     ) -> requests.Response:
         response = self.session.get(url, params=params, timeout=timeout)
         try:
@@ -284,9 +295,16 @@ class JellyfinClient:
         self,
         max_width: int,
         max_height: int,
-        last_item_id: Optional[str] = None,
-        selected_movies: Optional[List[str]] = None,
+        last_item_id: str | None = None,
+        selected_movies: list[str] | None = None,
     ):
+        if self.top_rated_movie_count > 0:
+            return self.get_top_rated_movie_image(
+                max_width=max_width,
+                max_height=max_height,
+                last_item_id=last_item_id,
+            )
+
         genres = self._current_genres()
         user_id = self.resolve_user_id()
 
@@ -323,13 +341,25 @@ class JellyfinClient:
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
 
+        if self.excluded_genres:
+            items = [
+                item
+                for item in items
+                if not self.excluded_genres.intersection(
+                    str(genre).casefold() for genre in (item.get("Genres") or [])
+                )
+            ]
+            if not items:
+                raise RuntimeError(
+                    "All media with posters matched the configured EXCLUDED_GENRES."
+                )
+
         if genres:
             items = [
                 item
                 for item in items
-            if genres.intersection(
-                    str(genre).casefold()
-                    for genre in (item.get("Genres") or [])
+                if genres.intersection(
+                    str(genre).casefold() for genre in (item.get("Genres") or [])
                 )
             ]
             if not items:
@@ -360,28 +390,73 @@ class JellyfinClient:
         )
         return item_id, chosen.get("Name", "Unknown Title"), image
 
-    def _current_genres(self, current_date: Optional[date] = None) -> set[str]:
+    def get_top_rated_movie_image(
+        self,
+        max_width: int,
+        max_height: int,
+        last_item_id: str | None = None,
+    ) -> tuple[str, str, Image.Image]:
+        """Choose randomly among Jellyfin's highest CommunityRating movies."""
+        user_id = self.resolve_user_id()
+        response = self._get(
+            f"{self.base_url}/Users/{user_id}/Items",
+            params={
+                "Recursive": "true",
+                "IncludeItemTypes": "Movie",
+                "Fields": "ProviderIds",
+                "ImageTypes": "Primary",
+                "SortBy": "CommunityRating",
+                "SortOrder": "Descending",
+                "Limit": str(self.top_rated_movie_count),
+            },
+            timeout=15,
+        )
+        items = [
+            item
+            for item in response.json().get("Items", [])
+            if item.get("Id") and item.get("CommunityRating") is not None
+        ]
+        if not items:
+            raise RuntimeError(
+                "TOP_RATED_MOVIE_COUNT is enabled, but Jellyfin returned no rated movies with posters."
+            )
+
+        candidates = [item for item in items if item.get("Id") != last_item_id] or items
+        chosen = random.choice(candidates)
+        item_id = str(chosen["Id"])
+        title = str(chosen.get("Name", "Unknown Title"))
+        image = self.get_item_poster_image(
+            item_id=item_id, max_width=max_width, max_height=max_height
+        )
+        logger.info(
+            "Selected top-rated movie: '%s' (Jellyfin community rating: %s)",
+            title,
+            chosen.get("CommunityRating"),
+        )
+        return item_id, title, image
+
+    def _current_genres(self, current_date: date | None = None) -> set[str]:
         """Use active holiday genres, otherwise the standard GENRES setting."""
         if self.holiday_mode:
             today = current_date or date.today()
-            active_rules = [rule for rule in self.holiday_rules if rule.is_active(today)]
+            active_rules = [
+                rule for rule in self.holiday_rules if rule.is_active(today)
+            ]
             if active_rules:
                 names = ", ".join(rule.name for rule in active_rules)
                 logger.info("Holiday genre mode active: %s", names)
                 return {
-                    genre.casefold()
-                    for rule in active_rules
-                    for genre in rule.genres
+                    genre.casefold() for rule in active_rules for genre in rule.genres
                 }
         return self.genres
 
-    def get_active_media_sessions(self) -> List[Dict[str, str]]:
+    def get_active_media_sessions(self) -> list[dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
         response = self._get(
             sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15
         )
         sessions = response.json()
-        active_movies: List[Dict[str, str]] = []
+        active_movies: list[dict[str, str]] = []
 
         for session in sessions:
             now_playing = session.get("NowPlayingItem") or {}
@@ -392,14 +467,18 @@ class JellyfinClient:
                 genre_item = now_playing
             elif media_type == "Episode" and "Series" in self.media_types:
                 item_id = now_playing.get("SeriesId") or now_playing.get("Id")
-                title = now_playing.get("SeriesName") or now_playing.get("Name", "Unknown Title")
+                title = now_playing.get("SeriesName") or now_playing.get(
+                    "Name", "Unknown Title"
+                )
                 genre_item = now_playing
             else:
                 continue
             if not item_id:
                 continue
 
-            if self.genres and not self._matches_genres(genre_item, item_id):
+            if (
+                self._current_genres() or self.excluded_genres
+            ) and not self._matches_genres(genre_item, item_id):
                 continue
 
             active_movies.append(
@@ -414,20 +493,21 @@ class JellyfinClient:
         return active_movies
 
     def _matches_genres(self, item: dict, item_id: str) -> bool:
-        genres = self._current_genres()
-        if not genres:
-            return True
         item_genres = item.get("Genres")
-        if not item_genres:
+        if not item_genres and (
+            self.genres or self.excluded_genres or self.holiday_mode
+        ):
             response = self._get(
                 f"{self.base_url}/Items/{item_id}",
                 params={"Fields": "Genres"},
                 timeout=10,
             )
             item_genres = response.json().get("Genres", [])
-        return bool(
-            genres.intersection(str(genre).casefold() for genre in item_genres or [])
-        )
+        normalized_genres = {str(genre).casefold() for genre in item_genres or []}
+        if self.excluded_genres.intersection(normalized_genres):
+            return False
+        genres = self._current_genres()
+        return not genres or bool(genres.intersection(normalized_genres))
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int
@@ -449,13 +529,13 @@ class PosterCoordinator:
     def __init__(self, client: JellyfinClient, settings: Settings) -> None:
         self.client = client
         self.settings = settings
-        self.last_item_id: Optional[str] = None
+        self.last_item_id: str | None = None
         self.active_rotation_index = 0
         self.poster_cache = PosterCache(settings.poster_cache_size)
 
     def fetch_item(
         self, width: int, height: int, allow_idle_poster: bool = True
-    ) -> Optional[PosterDisplayItem]:
+    ) -> PosterDisplayItem | None:
         try:
             return self._fetch_online_item(width, height, allow_idle_poster)
         except (requests.RequestException, JellyfinConnectionError) as exc:
@@ -473,7 +553,7 @@ class PosterCoordinator:
 
     def _fetch_online_item(
         self, width: int, height: int, allow_idle_poster: bool
-    ) -> Optional[PosterDisplayItem]:
+    ) -> PosterDisplayItem | None:
         active_movies = self.client.get_active_media_sessions()
 
         if active_movies:

@@ -1,8 +1,9 @@
 import logging
 import signal
 import time
-from typing import Callable, Optional
-from PIL import Image, ImageDraw, ImageFont # pyright: ignore[reportMissingImports]
+from collections.abc import Callable
+
+from PIL import Image, ImageDraw, ImageFont  # pyright: ignore[reportMissingImports]
 
 from displays.base import BaseDisplay, PosterDisplayItem
 from displays.waveshare import epd7in3e, epdconfig
@@ -15,13 +16,13 @@ class EInkDisplay(BaseDisplay):
 
     def __init__(
         self,
-        fetch_content_fn: Callable[[int, int, bool], Optional[PosterDisplayItem]],
+        fetch_content_fn: Callable[[int, int, bool], PosterDisplayItem | None],
         width: int = 800,
         height: int = 480,
         rotation: int = 0,
         idle_refresh_minutes: int = 15,
         poll_interval_seconds: int = 15,
-        preview_path: Optional[str] = "eink_preview.png",
+        preview_path: str | None = "eink_preview.png",
         pwr_pin: int = 27,
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
@@ -34,16 +35,17 @@ class EInkDisplay(BaseDisplay):
         self.pwr_pin = pwr_pin
 
         self.running = False
-        self.last_displayed_id: Optional[str] = None
+        self.last_displayed_id: str | None = None
         self.last_refresh_time: float = 0.0
         self.last_was_playing: bool = False
         self.connection_lost = False
         self.last_display_connection_lost = False
-        self.last_good_item: Optional[PosterDisplayItem] = None
+        self.last_good_item: PosterDisplayItem | None = None
+        self.hardware_update_failed = False
 
         # Initialize hardware driver
         self.is_hardware_available = False
-        self.epd: Optional[epd7in3e.EPD] = None
+        self.epd: epd7in3e.EPD | None = None
         self._init_driver()
 
     def _init_driver(self) -> None:
@@ -69,7 +71,7 @@ class EInkDisplay(BaseDisplay):
                     "Rendered frames will be saved to '%s'.",
                     self.preview_path,
                 )
-        except Exception as exc:  # noqa: BLE001 - hardware drivers vary by platform
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
             logger.warning(
                 "Failed to initialize e-Paper hardware (%s). Operating in preview mode.",
                 exc,
@@ -139,7 +141,7 @@ class EInkDisplay(BaseDisplay):
             palette=pal_image, dither=Image.Dither.FLOYDSTEINBERG
         )
 
-    def render_item(self, item: PosterDisplayItem) -> None:
+    def render_item(self, item: PosterDisplayItem) -> bool:
         """Render the poster item to the e-ink screen or preview image."""
         logger.info(
             "Rendering poster to e-Paper: '%s' (playing: %s)",
@@ -167,15 +169,19 @@ class EInkDisplay(BaseDisplay):
                 self.epd.display(prepared)
                 logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
-            except Exception:  # noqa: BLE001 - contain vendor-driver failures
+            except (OSError, RuntimeError):
                 logger.exception("Hardware e-Paper update failed")
+                self.hardware_update_failed = True
+                return False
 
+            self.hardware_update_failed = False
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
         self.last_display_connection_lost = item.connection_lost
         if not item.connection_lost:
             self.last_good_item = item
+        return True
 
     def run(self) -> None:
         """Run the e-ink polling loop."""
@@ -202,9 +208,7 @@ class EInkDisplay(BaseDisplay):
                     or self.last_was_playing
                     or now - self.last_refresh_time >= self.idle_refresh_seconds
                 )
-                item = self.fetch_content_fn(
-                    self.width, self.height, allow_idle_poster
-                )
+                item = self.fetch_content_fn(self.width, self.height, allow_idle_poster)
                 was_connection_lost = self.connection_lost
                 if was_connection_lost and item is None and self.last_good_item is None:
                     item = self.fetch_content_fn(self.width, self.height, True)
@@ -235,7 +239,9 @@ class EInkDisplay(BaseDisplay):
                     elif item.is_playing and item.item_id != self.last_displayed_id:
                         should_refresh = True
                         logger.info("Active playing movie changed to '%s'.", item.title)
-                    elif item.connection_lost and item.item_id != self.last_displayed_id:
+                    elif (
+                        item.connection_lost and item.item_id != self.last_displayed_id
+                    ):
                         should_refresh = True
 
                     # Condition 4: Idle timeout elapsed, rotate random poster
@@ -251,12 +257,15 @@ class EInkDisplay(BaseDisplay):
 
                     if should_refresh:
                         self.render_item(item)
-                elif recovered and self.last_good_item is not None:
+                elif (
+                    self.last_display_connection_lost
+                    and self.last_good_item is not None
+                ):
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
-            except Exception:  # noqa: BLE001 - keep the polling loop alive
+            except (OSError, RuntimeError, ValueError):
                 logger.exception("Error in e-ink loop")
-                if not self.connection_lost:
+                if not self.connection_lost or self.hardware_update_failed:
                     self.connection_lost = True
                     previous = self.last_good_item
                     warning_item = PosterDisplayItem(
@@ -286,7 +295,9 @@ class EInkDisplay(BaseDisplay):
         if self.is_hardware_available and self.epd is not None:
             try:
                 self.epd.sleep()
-            except Exception:  # noqa: BLE001 - best-effort hardware shutdown
-                logger.warning("Could not put e-Paper display into sleep", exc_info=True)
+            except (OSError, RuntimeError):
+                logger.warning(
+                    "Could not put e-Paper display into sleep", exc_info=True
+                )
         epdconfig.implementation.module_exit(cleanup_power=True)
         logger.info("e-Ink display shutdown complete.")

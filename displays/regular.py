@@ -1,8 +1,14 @@
 import logging
 import time
-from typing import Callable, Optional
-from PIL import Image, ImageDraw, ImageFont, ImageTk # pyright: ignore[reportMissingImports]
 import tkinter as tk
+from collections.abc import Callable
+
+from PIL import (  # pyright: ignore[reportMissingImports]
+    Image,
+    ImageDraw,
+    ImageFont,
+    ImageTk,
+)
 
 from displays.base import BaseDisplay, PosterDisplayItem
 
@@ -14,7 +20,7 @@ class RegularDisplay(BaseDisplay):
 
     def __init__(
         self,
-        fetch_content_fn: Callable[[int, int, bool], Optional[PosterDisplayItem]],
+        fetch_content_fn: Callable[[int, int, bool], PosterDisplayItem | None],
         refresh_seconds: int = 30,
         idle_refresh_minutes: int = 30,
         background_color: str = "black",
@@ -34,14 +40,14 @@ class RegularDisplay(BaseDisplay):
         # Interval: 200 ms at speed 1, 15 ms at speed 10
         self.fade_interval_ms = max(15, 215 - self.fade_speed * 20)
 
-        self._current_canvas: Optional[Image.Image] = None
-        self._tk_image: Optional[ImageTk.PhotoImage] = None
-        self._last_displayed_id: Optional[str] = None
+        self._current_canvas: Image.Image | None = None
+        self._tk_image: ImageTk.PhotoImage | None = None
+        self._last_displayed_id: str | None = None
         self._last_was_playing = False
         self._last_refresh_time = 0.0
         self._pending_advances = 0
         self._fade_in_progress = False
-        self._refresh_after_id: Optional[str] = None
+        self._refresh_after_id: str | None = None
         self._connection_lost = False
 
         self.root = tk.Tk()
@@ -120,9 +126,7 @@ class RegularDisplay(BaseDisplay):
 
     def _show_top_banner(self) -> None:
         if not self.banner_visible:
-            self.top_banner.place(
-                x=0, y=0, width=self._top_banner_width, relheight=1.0
-            )
+            self.top_banner.place(x=0, y=0, width=self._top_banner_width, relheight=1.0)
             self.top_banner.lift()
             self.banner_visible = True
 
@@ -183,7 +187,9 @@ class RegularDisplay(BaseDisplay):
             item = self.fetch_content_fn(screen_w, screen_h, allow_idle_poster)
             was_connection_lost = self._connection_lost
             recovered = was_connection_lost and not (item and item.connection_lost)
-            connection_state_changed = bool(item and item.connection_lost) != was_connection_lost
+            connection_state_changed = (
+                bool(item and item.connection_lost) != was_connection_lost
+            )
             self._connection_lost = bool(item and item.connection_lost)
 
             if item is None:
@@ -198,13 +204,13 @@ class RegularDisplay(BaseDisplay):
                 or connection_state_changed
                 or self._last_displayed_id is None
             )
-            if item.is_playing != self._last_was_playing:
-                should_render = True
-            elif item.is_playing and item.item_id != self._last_displayed_id:
-                should_render = True
-            elif (
-                not item.is_playing
-                and now - self._last_refresh_time >= self.idle_refresh_seconds
+            if (
+                item.is_playing != self._last_was_playing
+                or (item.is_playing and item.item_id != self._last_displayed_id)
+                or (
+                    not item.is_playing
+                    and now - self._last_refresh_time >= self.idle_refresh_seconds
+                )
             ):
                 should_render = True
 
