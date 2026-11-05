@@ -257,7 +257,10 @@ class EInkDisplay(BaseDisplay):
 
                     if should_refresh:
                         self.render_item(item)
-                elif recovered and self.last_good_item is not None:
+                elif (
+                    self.last_display_connection_lost
+                    and self.last_good_item is not None
+                ):
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
             except (OSError, RuntimeError, ValueError):

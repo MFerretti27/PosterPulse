@@ -403,8 +403,8 @@ class JellyfinClient:
             params={
                 "Recursive": "true",
                 "IncludeItemTypes": "Movie",
-                "Fields": "CommunityRating,ProviderIds",
-                "HasPrimaryImage": "true",
+                "Fields": "ProviderIds",
+                "ImageTypes": "Primary",
                 "SortBy": "CommunityRating",
                 "SortOrder": "Descending",
                 "Limit": str(self.top_rated_movie_count),
