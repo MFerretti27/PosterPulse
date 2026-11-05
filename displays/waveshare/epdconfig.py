@@ -84,7 +84,7 @@ class RaspberryPi:
             self._gpiozero_devs[self.busy_pin] = gpiozero.Button(
                 self.busy_pin, pull_up=None, active_state=True
             )
-        except Exception:
+        except (ImportError, OSError, RuntimeError, ValueError):
             try:
                 from RPi import GPIO  # type: ignore[import]
 
@@ -97,7 +97,7 @@ class RaspberryPi:
                 self._gpio.setup(self.cs_pin, self._gpio.OUT)
                 self._gpio.setup(self.pwr_pin, self._gpio.OUT)
                 self._gpio.setup(self.busy_pin, self._gpio.IN)
-            except Exception as exc:
+            except (ImportError, OSError, RuntimeError, ValueError) as exc:
                 logger.warning(
                     "GPIO library not available (gpiozero / RPi.GPIO): %s. Falling back to mock.",
                     exc,
@@ -111,7 +111,7 @@ class RaspberryPi:
             self.spi = spidev.SpiDev(0, 0)
             self.spi.max_speed_hz = 4000000
             self.spi.mode = 0b00
-        except Exception as exc:
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
             logger.warning("spidev not available: %s. Falling back to mock SPI.", exc)
             self.spi = None
 
@@ -126,7 +126,7 @@ class RaspberryPi:
         if self.spi is not None:
             try:
                 self.spi.close()
-            except Exception:
+            except (OSError, RuntimeError):
                 logger.warning("Could not close SPI device", exc_info=True)
 
         if self.gpio_lib == "RPi.GPIO" and self._gpio is not None:
@@ -137,7 +137,7 @@ class RaspberryPi:
             for dev in self._gpiozero_devs.values():
                 try:
                     dev.close()
-                except Exception:
+                except (OSError, RuntimeError):
                     logger.warning("Could not close GPIO device", exc_info=True)
             self._gpiozero_devs.clear()
 

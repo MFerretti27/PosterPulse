@@ -71,7 +71,7 @@ class EInkDisplay(BaseDisplay):
                     "Rendered frames will be saved to '%s'.",
                     self.preview_path,
                 )
-        except Exception as exc:
+        except (ImportError, OSError, RuntimeError, ValueError, AttributeError) as exc:
             logger.warning(
                 "Failed to initialize e-Paper hardware (%s). Operating in preview mode.",
                 exc,
@@ -169,7 +169,7 @@ class EInkDisplay(BaseDisplay):
                 self.epd.display(prepared)
                 logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
-            except Exception:
+            except (OSError, RuntimeError):
                 logger.exception("Hardware e-Paper update failed")
                 self.hardware_update_failed = True
                 return False
@@ -260,7 +260,7 @@ class EInkDisplay(BaseDisplay):
                 elif recovered and self.last_good_item is not None:
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
-            except Exception:
+            except (OSError, RuntimeError, ValueError):
                 logger.exception("Error in e-ink loop")
                 if not self.connection_lost or self.hardware_update_failed:
                     self.connection_lost = True
@@ -292,7 +292,7 @@ class EInkDisplay(BaseDisplay):
         if self.is_hardware_available and self.epd is not None:
             try:
                 self.epd.sleep()
-            except Exception:
+            except (OSError, RuntimeError):
                 logger.warning(
                     "Could not put e-Paper display into sleep", exc_info=True
                 )
