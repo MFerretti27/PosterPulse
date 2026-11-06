@@ -45,6 +45,7 @@ class Settings:
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     selected_movies: list[str] = field(default_factory=list)
+    collections: list[str] = field(default_factory=list)
     media_types: list[str] = field(default_factory=lambda: ["Movie"])
     genres: list[str] = field(default_factory=list)
     excluded_genres: list[str] = field(default_factory=list)
@@ -92,6 +93,11 @@ class Settings:
             title.strip()
             for title in os.getenv("SELECT_MOVIES", "").split(",")
             if title.strip()
+        ]
+        collections = [
+            name.strip()
+            for name in os.getenv("COLLECTIONS", "").split(",")
+            if name.strip()
         ]
         media_type_aliases = {
             "movie": "Movie",
@@ -214,6 +220,7 @@ class Settings:
             fullscreen=fullscreen,
             fade_speed=fade_speed,
             selected_movies=selected_movies,
+            collections=collections,
             media_types=media_types,
             genres=genres,
             excluded_genres=excluded_genres,
@@ -234,6 +241,8 @@ class JellyfinClient:
     def __init__(self, settings: Settings) -> None:
         self.base_url = settings.jellyfin_url
         self.media_types = settings.media_types
+        self.collections = settings.collections
+        self._collection_ids: list[str] | None = None
         self.genres = {genre.casefold() for genre in settings.genres}
         self.excluded_genres = {genre.casefold() for genre in settings.excluded_genres}
         self.top_rated_movie_count = settings.top_rated_movie_count
@@ -318,25 +327,11 @@ class JellyfinClient:
             "Limit": str(page_size),
         }
 
-        items = []
-        start_index = 0
-        while True:
-            params["StartIndex"] = str(start_index)
-            payload = self._get(items_url, params=params, timeout=15).json()
-            page_items = payload.get("Items", [])
-            items.extend(page_items)
-
-            total_count = payload.get("TotalRecordCount")
-            if (
-                not page_items
-                or len(page_items) < page_size
-                or (
-                    total_count is not None
-                    and start_index + len(page_items) >= total_count
-                )
-            ):
-                break
-            start_index += len(page_items)
+        items = (
+            self._get_collection_items(user_id, params)
+            if self.collections
+            else self._get_all_items(items_url, params, timeout=15)
+        )
 
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
@@ -390,6 +385,73 @@ class JellyfinClient:
         )
         return item_id, chosen.get("Name", "Unknown Title"), image
 
+    def _get_all_items(
+        self, url: str, params: dict, *, timeout: int = 15
+    ) -> list[dict]:
+        """Fetch all pages of a Jellyfin Items query."""
+        page_size = 500
+        paged_params = {**params, "Limit": str(page_size)}
+        items: list[dict] = []
+        start_index = 0
+        while True:
+            paged_params["StartIndex"] = str(start_index)
+            payload = self._get(url, params=paged_params, timeout=timeout).json()
+            page_items = payload.get("Items", [])
+            items.extend(page_items)
+            total_count = payload.get("TotalRecordCount")
+            if (
+                not page_items
+                or len(page_items) < page_size
+                or (
+                    total_count is not None
+                    and start_index + len(page_items) >= total_count
+                )
+            ):
+                return items
+            start_index += len(page_items)
+
+    def _resolve_collection_ids(self, user_id: str) -> list[str]:
+        """Resolve configured Jellyfin BoxSet collection names to item IDs."""
+        if self._collection_ids is not None:
+            return self._collection_ids
+
+        collections = self._get_all_items(
+            f"{self.base_url}/Users/{user_id}/Items",
+            {
+                "Recursive": "true",
+                "IncludeItemTypes": "BoxSet",
+                "Fields": "ProviderIds",
+                "Limit": "500",
+            },
+        )
+        matches = {
+            str(item["Name"]).casefold(): str(item["Id"])
+            for item in collections
+            if item.get("Name") and item.get("Id")
+        }
+        missing_names = [
+            name for name in self.collections if name.casefold() not in matches
+        ]
+        if missing_names:
+            raise RuntimeError(
+                "Jellyfin collection(s) not found: " + ", ".join(missing_names)
+            )
+
+        self._collection_ids = [matches[name.casefold()] for name in self.collections]
+        return self._collection_ids
+
+    def _get_collection_items(self, user_id: str, params: dict) -> list[dict]:
+        """Return unique media items from the configured BoxSet collections."""
+        items_url = f"{self.base_url}/Users/{user_id}/Items"
+        unique_items: dict[str, dict] = {}
+        for collection_id in self._resolve_collection_ids(user_id):
+            collection_params = {**params, "ParentId": collection_id}
+            for item in self._get_all_items(items_url, collection_params, timeout=15):
+                item_id = item.get("Id")
+                if item_id:
+                    unique_items[str(item_id)] = item
+        return list(unique_items.values())
+
     def get_top_rated_movie_image(
         self,
         max_width: int,
@@ -398,22 +460,29 @@ class JellyfinClient:
     ) -> tuple[str, str, Image.Image]:
         """Choose randomly among Jellyfin's highest CommunityRating movies."""
         user_id = self.resolve_user_id()
-        response = self._get(
-            f"{self.base_url}/Users/{user_id}/Items",
-            params={
-                "Recursive": "true",
-                "IncludeItemTypes": "Movie",
-                "Fields": "ProviderIds",
-                "ImageTypes": "Primary",
-                "SortBy": "CommunityRating",
-                "SortOrder": "Descending",
-                "Limit": str(self.top_rated_movie_count),
-            },
-            timeout=15,
-        )
+        items_url = f"{self.base_url}/Users/{user_id}/Items"
+        params = {
+            "Recursive": "true",
+            "IncludeItemTypes": "Movie",
+            "Fields": "CommunityRating,ProviderIds",
+            "ImageTypes": "Primary",
+            "SortBy": "CommunityRating",
+            "SortOrder": "Descending",
+            "Limit": str(self.top_rated_movie_count),
+        }
+        if self.collections:
+            items = self._get_collection_items(user_id, params)
+            items.sort(
+                key=lambda item: float(item.get("CommunityRating") or 0),
+                reverse=True,
+            )
+            items = items[: self.top_rated_movie_count]
+        else:
+            response = self._get(items_url, params=params, timeout=15)
+            items = response.json().get("Items", [])
         items = [
             item
-            for item in response.json().get("Items", [])
+            for item in items
             if item.get("Id") and item.get("CommunityRating") is not None
         ]
         if not items:
