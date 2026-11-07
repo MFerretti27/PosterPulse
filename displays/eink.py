@@ -6,33 +6,41 @@ from collections.abc import Callable
 from PIL import Image, ImageDraw, ImageFont  # pyright: ignore[reportMissingImports]
 
 from displays.base import BaseDisplay, PosterDisplayItem
-from displays.waveshare import epd7in3e, epdconfig
+from displays.waveshare import epd4in0e, epd7in3e, epdconfig
 
 logger = logging.getLogger(__name__)
 
 
 class EInkDisplay(BaseDisplay):
-    """Headless E-Paper display backend for Waveshare 7.3inch PhotoPainter (epd7in3e)."""
+    """Headless backend for supported Waveshare E6 and PhotoPainter panels."""
 
     def __init__(
         self,
         fetch_content_fn: Callable[[int, int, bool], PosterDisplayItem | None],
-        width: int = 800,
-        height: int = 480,
+        model: str = "7in3e",
+        width: int | None = None,
+        height: int | None = None,
         rotation: int = 0,
         idle_refresh_minutes: int = 15,
         poll_interval_seconds: int = 15,
         preview_path: str | None = "eink_preview.png",
-        pwr_pin: int = 27,
+        pwr_pin: int | None = None,
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
-        self.width = width
-        self.height = height
+        if model not in {"7in3e", "4in0e"}:
+            raise ValueError(f"Unsupported e-ink model: {model}")
+        self.model = model
+        self.epd_module = epd4in0e if model == "4in0e" else epd7in3e
+        default_width, default_height = (400, 600) if model == "4in0e" else (800, 480)
+        self.width = width if width is not None else default_width
+        self.height = height if height is not None else default_height
         self.rotation = rotation
         self.idle_refresh_seconds = max(60, idle_refresh_minutes * 60)
         self.poll_interval_seconds = max(5, poll_interval_seconds)
         self.preview_path = preview_path
-        self.pwr_pin = pwr_pin
+        self.pwr_pin = (
+            pwr_pin if pwr_pin is not None else (18 if model == "4in0e" else 27)
+        )
 
         self.running = False
         self.last_displayed_id: str | None = None
@@ -45,7 +53,7 @@ class EInkDisplay(BaseDisplay):
 
         # Initialize hardware driver
         self.is_hardware_available = False
-        self.epd: epd7in3e.EPD | None = None
+        self.epd: epd4in0e.EPD | epd7in3e.EPD | None = None
         self._init_driver()
 
     def _init_driver(self) -> None:
@@ -53,7 +61,7 @@ class EInkDisplay(BaseDisplay):
             # Configure custom pins (PhotoPainter uses BCM 27 for PWR)
             epdconfig.implementation.pwr_pin = self.pwr_pin
             epdconfig.implementation.module_init()
-            self.epd = epd7in3e.EPD(config=epdconfig.implementation)
+            self.epd = self.epd_module.EPD(config=epdconfig.implementation)
 
             # Check if spi and gpio are real hardware (not mock)
             if (
@@ -106,12 +114,18 @@ class EInkDisplay(BaseDisplay):
         paste_y = (self.height - new_h) // 2
         canvas.paste(resized, (paste_x, paste_y))
 
-        # Show a red vertical status banner for playback or lost connectivity.
+        # Put the status strip on the panel's short edge. The E6 is portrait,
+        # so its short edge is horizontal; the PhotoPainter is landscape, so
+        # its short edge is the vertical strip on the left.
         if item.is_playing or item.connection_lost:
             banner_width = 42
-            # Build the label in landscape, then rotate it counter-clockwise
-            # into a vertical strip on the display's short side.
-            banner = Image.new("RGB", (self.height, banner_width), (180, 0, 0))
+            is_portrait_panel = self.height > self.width
+            banner_size = (
+                (self.width, banner_width)
+                if is_portrait_panel
+                else (self.height, banner_width)
+            )
+            banner = Image.new("RGB", banner_size, (180, 0, 0))
             draw = ImageDraw.Draw(banner)
             label_text = "CONNECTION LOST" if item.connection_lost else "NOW PLAYING"
             try:
@@ -125,8 +139,12 @@ class EInkDisplay(BaseDisplay):
             text_x = (banner.width - text_width) // 2 - text_bounds[0]
             text_y = (banner.height - text_height) // 2 - text_bounds[1]
             draw.text((text_x, text_y), label_text, fill=(255, 255, 255), font=font)
-            vertical_banner = banner.rotate(90, expand=True)
-            canvas.paste(vertical_banner, (0, 0))
+            if is_portrait_panel:
+                # This is the vertical banner layout rotated 90° clockwise.
+                canvas.paste(banner, (0, 0))
+            else:
+                # Landscape panel: use a vertical strip spanning its short side.
+                canvas.paste(banner.rotate(90, expand=True), (0, 0))
 
         # Apply user-specified rotation (e.g. 180 deg for reversed frames)
         if self.rotation != 0:
@@ -136,7 +154,7 @@ class EInkDisplay(BaseDisplay):
 
     def _dither_and_quantize(self, image: Image.Image) -> Image.Image:
         """Quantize RGB image to 6-color palette with Floyd-Steinberg dithering."""
-        pal_image = epd7in3e.EPD.create_palette_image()
+        pal_image = self.epd_module.EPD.create_palette_image()
         return image.convert("RGB").quantize(
             palette=pal_image, dither=Image.Dither.FLOYDSTEINBERG
         )
@@ -166,7 +184,16 @@ class EInkDisplay(BaseDisplay):
             try:
                 logger.info("Waking e-Paper display and sending image...")
                 self.epd.init()
-                self.epd.display(prepared)
+                if self.model == "4in0e":
+                    if not isinstance(self.epd, epd4in0e.EPD):
+                        raise RuntimeError("E6 model selected with a different driver")
+                    self.epd.display(self.epd.getbuffer(prepared))
+                else:
+                    if not isinstance(self.epd, epd7in3e.EPD):
+                        raise RuntimeError(
+                            "PhotoPainter model selected with a different driver"
+                        )
+                    self.epd.display(prepared)
                 logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
             except (OSError, RuntimeError):

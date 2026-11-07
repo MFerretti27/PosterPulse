@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# PosterPulse - Automated Setup Script for Raspberry Pi Zero 2 W with Waveshare
-# 7.3" PhotoPainter E-Ink Display (epd7in3e)
+# PosterPulse - Automated Setup Script for Raspberry Pi with Waveshare E-Ink
+# Supported displays: 4-inch E6 (4in0e) and 7.3-inch PhotoPainter (7in3e).
 #
 # Supports:
 #   1. Remote setup from Mac/PC over SSH:
@@ -272,6 +272,8 @@ ensure_env_var() {
 }
 
 ensure_env_var "DISPLAY_TYPE" "eink"
+# Default to the PhotoPainter model when no model is configured.
+ensure_env_var "EINK_MODEL" "7in3e"
 ensure_env_var "EINK_WIDTH" "800"
 ensure_env_var "EINK_HEIGHT" "480"
 ensure_env_var "EINK_PWR_PIN" "27"
