@@ -4,6 +4,7 @@ import os
 import random
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -55,7 +56,8 @@ class Settings:
     idle_refresh_minutes: int = 30
     poster_cache_size: int = 10
 
-    # E-Ink specific settings (optimized for Waveshare 7.3" PhotoPainter)
+    # Supported E-Ink models: 7in3e (PhotoPainter) and 4in0e (E6).
+    eink_model: str = "7in3e"
     eink_width: int = 800
     eink_height: int = 480
     eink_rotation: int = 0  # 0, 90, 180, 270 (180 if orientation is reversed in frame)
@@ -197,8 +199,25 @@ class Settings:
                     )
                 )
 
-        eink_width = int(os.getenv("EINK_WIDTH", "800"))
-        eink_height = int(os.getenv("EINK_HEIGHT", "480"))
+        eink_model = os.getenv("EINK_MODEL", "7in3e").strip().casefold()
+        model_aliases = {
+            "7in3e": "7in3e",
+            "7.3": "7in3e",
+            "7.3in": "7in3e",
+            "photopainter": "7in3e",
+            "4in0e": "4in0e",
+            "4in": "4in0e",
+            "e6": "4in0e",
+            "spectra6": "4in0e",
+        }
+        if eink_model not in model_aliases:
+            raise ValueError("EINK_MODEL must be '7in3e' or '4in0e'")
+        eink_model = model_aliases[eink_model]
+        default_eink_width, default_eink_height = (
+            (400, 600) if eink_model == "4in0e" else (800, 480)
+        )
+        eink_width = int(os.getenv("EINK_WIDTH", str(default_eink_width)))
+        eink_height = int(os.getenv("EINK_HEIGHT", str(default_eink_height)))
         eink_rotation = int(os.getenv("EINK_ROTATION", "0"))
         idle_refresh_minutes = int(
             os.getenv(
@@ -209,7 +228,8 @@ class Settings:
         poster_cache_size = max(1, int(os.getenv("POSTER_CACHE_SIZE", "10")))
         raw_preview = os.getenv("EINK_PREVIEW_PATH", "eink_preview.png")
         eink_preview_path: str | None = raw_preview if raw_preview.strip() else None
-        eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", "27"))
+        default_eink_pwr_pin = 18 if eink_model == "4in0e" else 27
+        eink_pwr_pin = int(os.getenv("EINK_PWR_PIN", str(default_eink_pwr_pin)))
 
         return cls(
             jellyfin_url=jellyfin_url,
@@ -229,6 +249,7 @@ class Settings:
             holiday_rules=holiday_rules,
             idle_refresh_minutes=idle_refresh_minutes,
             poster_cache_size=poster_cache_size,
+            eink_model=eink_model,
             eink_width=eink_width,
             eink_height=eink_height,
             eink_rotation=eink_rotation,
@@ -600,6 +621,11 @@ class PosterCoordinator:
         self.settings = settings
         self.last_item_id: str | None = None
         self.active_rotation_index = 0
+        self.active_rotation_interval_seconds = max(
+            60, settings.idle_refresh_minutes * 60
+        )
+        self.last_active_rotation_time = 0.0
+        self.last_active_session_signature: tuple[tuple[str, str], ...] | None = None
         self.poster_cache = PosterCache(settings.poster_cache_size)
 
     def fetch_item(
@@ -626,8 +652,32 @@ class PosterCoordinator:
         active_movies = self.client.get_active_media_sessions()
 
         if active_movies:
+            active_movies.sort(
+                key=lambda movie: (movie["session_id"], movie["item_id"])
+            )
+            session_signature = tuple(
+                (movie["session_id"], movie["item_id"]) for movie in active_movies
+            )
+            now = time.monotonic()
+            if session_signature != self.last_active_session_signature:
+                self.active_rotation_index = 0
+                self.last_active_rotation_time = now
+                self.last_active_session_signature = session_signature
+            elif (
+                len(active_movies) > 1
+                and now - self.last_active_rotation_time
+                >= self.active_rotation_interval_seconds
+            ):
+                self.active_rotation_index = (self.active_rotation_index + 1) % len(
+                    active_movies
+                )
+                self.last_active_rotation_time = now
+                logger.info(
+                    "Rotating active playback poster (%d-minute interval).",
+                    self.settings.idle_refresh_minutes,
+                )
+
             selected = active_movies[self.active_rotation_index % len(active_movies)]
-            self.active_rotation_index += 1
             item_id = selected["item_id"]
             title = selected["title"]
             user_name = selected["user_name"]
@@ -650,10 +700,12 @@ class PosterCoordinator:
             self._cache_item(item)
             return item
 
+        self.active_rotation_index = 0
+        self.last_active_rotation_time = 0.0
+        self.last_active_session_signature = None
         if not allow_idle_poster:
             return None
 
-        self.active_rotation_index = 0
         item_id, title, image = self.client.get_random_poster_image(
             max_width=width,
             max_height=height,
@@ -696,7 +748,8 @@ def main() -> int:
     display_app: BaseDisplay
     if settings.display_type == "eink":
         logger.info(
-            "Initializing E-Ink display mode (%dx%d, PhotoPainter PWR=BCM %d)",
+            "Initializing E-Ink display mode (%s, %dx%d, PWR=BCM %d)",
+            settings.eink_model,
             settings.eink_width,
             settings.eink_height,
             settings.eink_pwr_pin,
@@ -705,6 +758,7 @@ def main() -> int:
 
         display_app = EInkDisplay(
             fetch_content_fn=coordinator.fetch_item,
+            model=settings.eink_model,
             width=settings.eink_width,
             height=settings.eink_height,
             rotation=settings.eink_rotation,

@@ -4,7 +4,7 @@ This Python app connects to a Jellyfin server and displays movie posters for you
 
 It supports two distinct display modes:
 1. **Regular Screen (HDMI / Monitor / TV)**: A fullscreen GUI (Tkinter) with smooth crossfade transitions and an active playback status banner.
-2. **E-Ink Display (Waveshare RPi Zero PhotoPainter 7.3")**: A lightweight, headless e-Paper driver with 6-color Floyd-Steinberg dithering, sleep-mode power management, and smart refresh logic tailored to e-Paper refresh limits.
+2. **E-Ink Display (Waveshare 4-inch E6 or 7.3-inch PhotoPainter)**: A lightweight, headless e-Paper driver with 6-color Floyd-Steinberg dithering, sleep-mode power management, and smart refresh logic tailored to e-Paper refresh limits.
 
 Behavior:
 - If users are actively watching configured media types, it displays their movie or TV-series poster.
@@ -13,7 +13,7 @@ Behavior:
 - Optionally set `COLLECTIONS` to comma-separated Jellyfin collection names (BoxSets) to limit idle poster selection to those collections. Leave it empty to use the library. It also scopes top-rated movie mode when enabled.
 - Set `TOP_RATED_MOVIE_COUNT` above zero to rotate among that many top-rated movies, bypassing genre, holiday, and selected-title filters. Ranking uses Jellyfin's `CommunityRating` metadata; ensure your Jellyfin metadata provider populates it.
 - When `HOLIDAY_MODE=true`, the matching holiday's genre replaces `GENRES` for its configured date range. Holiday date ranges repeat yearly and may cross New Year.
-- While idle, both display modes rotate posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes), while checking for playback every `REFRESH_SECONDS`.
+- Both display modes rotate idle posters and cycle between multiple active playback posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes). They still check for playback changes every `REFRESH_SECONDS`.
 - Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
 - On regular screens, poster changes use a configurable crossfade transition.
@@ -76,24 +76,29 @@ For setup directly on the Pi, run:
 sudo bash .github/setup-pi-lcd.sh --local
 ```
 
-### Option B: E-Ink Screen (Waveshare RPi Zero PhotoPainter)
+### Option B: E-Ink Screen (Waveshare 4-inch E6 or 7.3-inch PhotoPainter)
+
+Choose the panel model before setup. In `.env`, set `DISPLAY_TYPE=eink` and use **one** matching configuration:
+
+| Panel | `EINK_MODEL` | Width × height | `EINK_PWR_PIN` |
+| --- | --- | --- | --- |
+| Waveshare 4-inch Spectra 6 E6 HAT | `4in0e` | `400 × 600` | `18` |
+| Waveshare 7.3-inch PhotoPainter | `7in3e` | `800 × 480` | `27` |
+
+The model, resolution, and power pin must all match the attached panel. The `.env.example` is set up for the 4-inch E6; change all four values in the table if using the 7.3-inch PhotoPainter.
+
+#### Waveshare documentation and reference drivers
+- [4-inch e-Paper HAT+ (E) manual](https://www.waveshare.com/wiki/4inch_e-Paper_HAT%2B_%28E%29) and [official Raspberry Pi E6 driver](https://github.com/waveshareteam/e-Paper/blob/master/E-paper_Separate_Program/4inch_e-Paper_E/RaspberryPi_JetsonNano/python/lib/waveshare_epd/epd4in0e.py).
+- [7.3-inch e-Paper HAT (E) manual](https://www.waveshare.com/wiki/7.3inch_e-Paper_HAT_%28E%29) and [official Waveshare e-Paper driver repository](https://github.com/waveshareteam/e-Paper/tree/master/RaspberryPi_JetsonNano/python/lib/waveshare_epd).
 
 #### Quick Automated Setup from your Computer (Recommended)
 You can deploy and set up the Raspberry Pi Zero 2 W directly from your Mac or PC over SSH:
 ```bash
-.github/setup-pi-eink.sh -ip=10.0.0.27
+bash .github/setup-pi-eink.sh -ip=10.0.0.27 -user=pi
 ```
-*(If your Raspberry Pi username is not `pi`, pass `-user=<username>`)*.
+Replace the IP and username with your Pi's address and account. The script deploys the current project and `.env`, provisions SPI/software dependencies, and enables the headless service. Set the desired e-ink model in your local `.env` before remote setup so the matching configuration is copied to the Pi.
 
-This remote command will:
-1. Connect to the Raspberry Pi over SSH.
-2. Synchronize project files to `~/PosterPulse` on the Pi.
-3. Automatically run the full hardware provisioning:
-   - Install required system libraries (`python3-spidev`, `python3-gpiozero`, `python3-pil`, etc.).
-   - Enable SPI and I2C interfaces via `raspi-config`.
-   - Create `.venv` and install Python dependencies.
-   - Configure [.env](.env.example) for Waveshare PhotoPainter (`DISPLAY_TYPE=eink`, `EINK_PWR_PIN=27`).
-   - Create and enable the `posterpulse.service` systemd service for headless auto-start on boot.
+It connects over SSH, copies the project and `.env`, installs the hardware/software dependencies, enables SPI, and configures the `posterpulse.service` systemd service for headless startup.
 
 #### Alternatively, Local Setup on the Pi
 If you are logged into the Pi directly or via SSH console:
@@ -103,16 +108,16 @@ sudo .github/setup-pi-eink.sh --local
 ```
 
 #### Manual Setup
-Set in `.env`:
+Set the common e-ink options in `.env`:
 ```env
 DISPLAY_TYPE=eink
 REFRESH_SECONDS=15              # How often to check if someone started playing a movie
 IDLE_REFRESH_MINUTES=30         # How often to rotate random posters when idle
 EINK_ROTATION=0                 # Set to 180 if the display is mounted upside-down
-EINK_PWR_PIN=27                 # PhotoPainter custom power pin (BCM 27)
 ```
+Set `EINK_MODEL` to the panel in the table. `EINK_WIDTH`, `EINK_HEIGHT`, and `EINK_PWR_PIN` are optional; if omitted, PosterPulse uses the selected model's defaults. If you set any of them explicitly, keep them matched to the panel.
 
-## 2) Waveshare PhotoPainter / Raspberry Pi Zero 2 W Notes
+## 2) Waveshare e-Paper / Raspberry Pi Notes
 
 1. **Enable SPI**:
    ```bash
@@ -125,8 +130,10 @@ EINK_PWR_PIN=27                 # PhotoPainter custom power pin (BCM 27)
    ```
 
 2. **Pin Mapping**:
-   The Waveshare PhotoPainter uses standard SPI pins plus a dedicated power pin on **BCM 27**:
-   - `PWR`: GPIO 27 (Pin 13)
+   Both panels use the HAT's standard SPI/control pins. Their power pins differ:
+   - 4-inch E6 HAT: `PWR` uses BCM 18.
+   - 7.3-inch PhotoPainter: `PWR` uses BCM 27.
+   Shared control connections are:
    - `RST`: GPIO 17 (Pin 11)
    - `DC`: GPIO 25 (Pin 22)
    - `CS`: CE0 / GPIO 8 (Pin 24)
@@ -136,9 +143,9 @@ EINK_PWR_PIN=27                 # PhotoPainter custom power pin (BCM 27)
    E-Paper displays require ~12-15 seconds for a full refresh and should not be refreshed continuously. PosterPulse polls Jellyfin every `REFRESH_SECONDS` (e.g. 15s) in the background, but only refreshes the e-Paper panel when:
    - Playback starts, changes, or stops.
    - Or when the idle rotation timer (`IDLE_REFRESH_MINUTES`) elapses.
-   Between refreshes, the panel is put into deep sleep with power cut to BCM 27.
+   Between refreshes, the panel is put into deep sleep and its model-specific power pin is disabled.
 
-4. **Headless Systemd Service (Recommended for Pi Zero 2 W)**:
+4. **Headless systemd service**:
    Because e-ink mode runs completely headless without X11 or a desktop environment, it uses minimal RAM (~30MB), leaving plenty of memory on the Pi Zero 2 W (512MB RAM).
 
    Create `/etc/systemd/system/posterpulse.service`:
