@@ -26,6 +26,7 @@ class RegularDisplay(BaseDisplay):
         background_color: str = "black",
         fullscreen: bool = True,
         fade_speed: int = 5,
+        rotation: int = 0,
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
         self.refresh_seconds = refresh_seconds
@@ -33,6 +34,9 @@ class RegularDisplay(BaseDisplay):
         self.background_color = background_color
         self.fullscreen = fullscreen
         self.fade_speed = max(1, min(10, fade_speed))
+        if rotation not in {0, 180}:
+            raise ValueError("Regular display rotation must be 0 or 180 degrees")
+        self.rotation = rotation
 
         # Fade speed tuning:
         # Steps: 30 at speed 1, down to 4 at speed 10
@@ -87,6 +91,8 @@ class RegularDisplay(BaseDisplay):
         x = (screen_w - image.width) // 2
         y = (screen_h - image.height) // 2
         canvas.paste(image, (x, y))
+        if self.rotation == 180:
+            canvas = canvas.rotate(180)
         return canvas
 
     def _do_fade(
@@ -126,7 +132,20 @@ class RegularDisplay(BaseDisplay):
 
     def _show_top_banner(self) -> None:
         if not self.banner_visible:
-            self.top_banner.place(x=0, y=0, width=self._top_banner_width, relheight=1.0)
+            if self.rotation == 180:
+                self.top_banner.place(
+                    relx=1.0,
+                    rely=1.0,
+                    x=0,
+                    y=0,
+                    width=self._top_banner_width,
+                    relheight=1.0,
+                    anchor="se",
+                )
+            else:
+                self.top_banner.place(
+                    x=0, y=0, width=self._top_banner_width, relheight=1.0
+                )
             self.top_banner.lift()
             self.banner_visible = True
 
@@ -148,7 +167,8 @@ class RegularDisplay(BaseDisplay):
             fill="white",
             font=font,
         )
-        return ImageTk.PhotoImage(banner.rotate(90, expand=True))
+        banner_rotation = 90 if self.rotation == 0 else 270
+        return ImageTk.PhotoImage(banner.rotate(banner_rotation, expand=True))
 
     def _set_banner_text(self, text: str) -> None:
         self._top_banner_image = self._make_banner_image(text)

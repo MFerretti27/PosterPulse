@@ -45,6 +45,7 @@ class Settings:
     background_color: str = "black"
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
+    display_rotation: int = 0  # Regular/LCD display rotation: 0 or 180 degrees
     selected_movies: list[str] = field(default_factory=list)
     collections: list[str] = field(default_factory=list)
     media_types: list[str] = field(default_factory=lambda: ["Movie"])
@@ -91,6 +92,9 @@ class Settings:
             "on",
         }
         fade_speed = max(1, min(10, int(os.getenv("FADE_SPEED", "8"))))
+        display_rotation = int(os.getenv("DISPLAY_ROTATION", "0")) % 360
+        if display_rotation not in {0, 180}:
+            raise ValueError("DISPLAY_ROTATION must be 0 or 180 for regular displays")
         selected_movies = [
             title.strip()
             for title in os.getenv("SELECT_MOVIES", "").split(",")
@@ -239,6 +243,7 @@ class Settings:
             background_color=background_color,
             fullscreen=fullscreen,
             fade_speed=fade_speed,
+            display_rotation=display_rotation,
             selected_movies=selected_movies,
             collections=collections,
             media_types=media_types,
@@ -778,6 +783,7 @@ def main() -> int:
             background_color=settings.background_color,
             fullscreen=settings.fullscreen,
             fade_speed=settings.fade_speed,
+            rotation=settings.display_rotation,
         )
 
     try:
