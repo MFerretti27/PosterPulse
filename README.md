@@ -18,6 +18,7 @@ Behavior:
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
 - On regular screens, poster changes use a configurable crossfade transition.
 - On regular screens, clicking or tapping advances to the next poster immediately.
+- Set `DISPLAY_ROTATION=180` to rotate the entire regular/LCD output for an upside-down-mounted screen; use `0` for normal orientation.
 - On e-ink screens, posters are dithered to 6 colors (Black, White, Yellow, Red, Blue, Green) and the display is placed in deep sleep between updates to conserve energy and preserve panel life.
 
 ## 1) Setup
@@ -43,6 +44,7 @@ Set in `.env`:
 DISPLAY_TYPE=regular
 FULLSCREEN=true
 FADE_SPEED=8
+DISPLAY_ROTATION=0
 REFRESH_SECONDS=30
 IDLE_REFRESH_MINUTES=30
 POSTER_CACHE_SIZE=10
