@@ -128,7 +128,7 @@ class EInkDisplay(BaseDisplay):
             banner = Image.new("RGB", banner_size, (180, 0, 0))
             draw = ImageDraw.Draw(banner)
             label_text = (
-                "CONNECTION LOST" if item.connection_lost else "Currently Playing"
+                "Connection Lost" if item.connection_lost else "Currently Playing"
             )
             try:
                 font = ImageFont.load_default(size=24)
