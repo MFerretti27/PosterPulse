@@ -49,6 +49,9 @@ class Settings:
     selected_movies: list[str] = field(default_factory=list)
     collections: list[str] = field(default_factory=list)
     media_types: list[str] = field(default_factory=lambda: ["Movie"])
+    poster_tags: list[str] = field(
+        default_factory=lambda: ["PosterPulse", "Poster Pulse"]
+    )
     genres: list[str] = field(default_factory=list)
     excluded_genres: list[str] = field(default_factory=list)
     top_rated_movie_count: int = 0
@@ -137,6 +140,11 @@ class Settings:
         )
         if not media_types:
             raise ValueError("MEDIA_TYPES must include Movie, Series, or both")
+        poster_tags = [
+            tag.strip()
+            for tag in os.getenv("POSTER_TAGS", "PosterPulse,Poster Pulse").split(",")
+            if tag.strip()
+        ]
         genres = [
             genre.strip()
             for genre in os.getenv("GENRES", "").split(",")
@@ -247,6 +255,7 @@ class Settings:
             selected_movies=selected_movies,
             collections=collections,
             media_types=media_types,
+            poster_tags=poster_tags,
             genres=genres,
             excluded_genres=excluded_genres,
             top_rated_movie_count=top_rated_movie_count,
@@ -269,6 +278,7 @@ class JellyfinClient:
         self.media_types = settings.media_types
         self.collections = settings.collections
         self._collection_ids: list[str] | None = None
+        self.poster_tags = {tag.casefold() for tag in settings.poster_tags}
         self.genres = {genre.casefold() for genre in settings.genres}
         self.excluded_genres = {genre.casefold() for genre in settings.excluded_genres}
         self.top_rated_movie_count = settings.top_rated_movie_count
@@ -348,7 +358,7 @@ class JellyfinClient:
         params = {
             "Recursive": "true",
             "IncludeItemTypes": ",".join(self.media_types),
-            "Fields": "PrimaryImageAspectRatio,Genres",
+            "Fields": "PrimaryImageAspectRatio,Genres,Tags",
             "HasPrimaryImage": "true",
             "Limit": str(page_size),
         }
@@ -361,6 +371,13 @@ class JellyfinClient:
 
         if not items:
             raise RuntimeError("No media with posters were found in Jellyfin")
+
+        if self.poster_tags:
+            items = [item for item in items if self._matches_poster_tags(item)]
+            if not items:
+                raise RuntimeError(
+                    "No media with posters matched the configured POSTER_TAGS."
+                )
 
         if self.excluded_genres:
             items = [
@@ -490,31 +507,40 @@ class JellyfinClient:
         params = {
             "Recursive": "true",
             "IncludeItemTypes": "Movie",
-            "Fields": "CommunityRating,ProviderIds",
+            "Fields": "CommunityRating,ProviderIds,Tags",
             "ImageTypes": "Primary",
             "SortBy": "CommunityRating",
             "SortOrder": "Descending",
             "Limit": str(self.top_rated_movie_count),
+            "HasPrimaryImage": "true",
         }
         if self.collections:
             items = self._get_collection_items(user_id, params)
-            items.sort(
-                key=lambda item: float(item.get("CommunityRating") or 0),
-                reverse=True,
-            )
-            items = items[: self.top_rated_movie_count]
+        elif self.poster_tags:
+            items = self._get_all_items(items_url, params, timeout=15)
         else:
             response = self._get(items_url, params=params, timeout=15)
             items = response.json().get("Items", [])
         items = [
             item
             for item in items
-            if item.get("Id") and item.get("CommunityRating") is not None
+            if item.get("Id")
+            and item.get("CommunityRating") is not None
+            and self._matches_poster_tags(item)
         ]
+        items.sort(
+            key=lambda item: float(item.get("CommunityRating") or 0),
+            reverse=True,
+        )
+        items = items[: self.top_rated_movie_count]
         if not items:
-            raise RuntimeError(
-                "TOP_RATED_MOVIE_COUNT is enabled, but Jellyfin returned no rated movies with posters."
+            message = (
+                "TOP_RATED_MOVIE_COUNT is enabled, but Jellyfin returned no rated "
+                "movies with posters."
             )
+            if self.poster_tags:
+                message = message.removesuffix(".") + " matching POSTER_TAGS."
+            raise RuntimeError(message)
 
         candidates = [item for item in items if item.get("Id") != last_item_id] or items
         chosen = random.choice(candidates)
@@ -571,9 +597,7 @@ class JellyfinClient:
             if not item_id:
                 continue
 
-            if (
-                self._current_genres() or self.excluded_genres
-            ) and not self._matches_genres(genre_item, item_id):
+            if not self._matches_item_filters(genre_item, item_id):
                 continue
 
             active_movies.append(
@@ -587,21 +611,37 @@ class JellyfinClient:
 
         return active_movies
 
-    def _matches_genres(self, item: dict, item_id: str) -> bool:
+    def _matches_poster_tags(self, item: dict) -> bool:
+        item_tags = {str(tag).casefold() for tag in (item.get("Tags") or [])}
+        return not self.poster_tags or bool(self.poster_tags.intersection(item_tags))
+
+    def _matches_item_filters(self, item: dict, item_id: str) -> bool:
+        genres = self._current_genres()
+        needs_genres = bool(genres or self.excluded_genres or self.holiday_mode)
+        needs_tags = bool(self.poster_tags)
         item_genres = item.get("Genres")
-        if not item_genres and (
-            self.genres or self.excluded_genres or self.holiday_mode
-        ):
+        item_tags = item.get("Tags")
+        requested_fields = []
+        if needs_genres and item_genres is None:
+            requested_fields.append("Genres")
+        if needs_tags and item_tags is None:
+            requested_fields.append("Tags")
+        if requested_fields:
             response = self._get(
                 f"{self.base_url}/Items/{item_id}",
-                params={"Fields": "Genres"},
+                params={"Fields": ",".join(requested_fields)},
                 timeout=10,
             )
-            item_genres = response.json().get("Genres", [])
+            item_details = response.json()
+            item_genres = item_details.get("Genres", item_genres)
+            item_tags = item_details.get("Tags", item_tags)
+
+        if not self._matches_poster_tags({**item, "Tags": item_tags}):
+            return False
+
         normalized_genres = {str(genre).casefold() for genre in item_genres or []}
         if self.excluded_genres.intersection(normalized_genres):
             return False
-        genres = self._current_genres()
         return not genres or bool(genres.intersection(normalized_genres))
 
     def get_item_poster_image(

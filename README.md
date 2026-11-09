@@ -29,7 +29,7 @@ These are currently the 2 Eink displays that are supported, more can be supporte
 ## Behavior:
 - If users are actively watching configured media types, it displays their movie or TV-series poster.
 - If nobody is actively watching, it shows posters from `SELECT_MOVIES` (if configured) or random posters from the configured library media types.
-- `MEDIA_TYPES` selects movies, TV series, or both; `GENRES` optionally limits poster selection to items matching any listed genre; `EXCLUDED_GENRES` always filters out matching genres.
+- `MEDIA_TYPES` selects movies, TV series, or both; `POSTER_TAGS` limits poster selection to items matching any listed Jellyfin tag (case-insensitive, defaulting to `PosterPulse` or `Poster Pulse`); `GENRES` optionally limits poster selection to items matching any listed genre; `EXCLUDED_GENRES` always filters out matching genres.
 - Optionally set `COLLECTIONS` to comma-separated Jellyfin collection names (BoxSets) to limit idle poster selection to those collections. Leave it empty to use the library. It also scopes top-rated movie mode when enabled.
 - Set `TOP_RATED_MOVIE_COUNT` above zero to rotate among that many top-rated movies, bypassing genre, holiday, and selected-title filters. Ranking uses Jellyfin's `CommunityRating` metadata; ensure your Jellyfin metadata provider populates it.
 - When `HOLIDAY_MODE=true`, the matching holiday's genre replaces `GENRES` for its configured date range. Holiday date ranges repeat yearly and may cross New Year.
@@ -70,6 +70,7 @@ IDLE_REFRESH_MINUTES=30
 POSTER_CACHE_SIZE=10
 COLLECTIONS=Pixar,Studio Ghibli
 MEDIA_TYPES=Movie,Series
+POSTER_TAGS=PosterPulse,Poster Pulse
 GENRES=Action,Comedy
 EXCLUDED_GENRES=Documentary,News
 TOP_RATED_MOVIE_COUNT=25
