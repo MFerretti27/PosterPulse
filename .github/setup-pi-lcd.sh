@@ -161,7 +161,9 @@ EOF
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$AUTOSTART_FILE"
 
 if [[ -S /tmp/.X11-unix/X0 ]]; then
-    pkill -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" 2>/dev/null || true
+    while IFS= read -r pid; do
+        kill "$pid"
+    done < <(pgrep -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" || test "$?" -eq 1)
     runuser -u "$CURRENT_USER" -- env DISPLAY=:0 nohup \
         "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" \
         >/tmp/posterpulse-regular.log 2>&1 </dev/null &
