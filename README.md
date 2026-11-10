@@ -29,10 +29,10 @@ These are currently the 2 Eink displays that are supported, more can be supporte
 ## Behavior:
 - If users are actively watching configured media types, it displays their movie or TV-series poster.
 - If nobody is actively watching, it shows posters from `SELECT_MOVIES` (if configured) or random posters from the configured library media types.
-- `MEDIA_TYPES` selects movies, TV series, or both; `POSTER_TAGS` limits poster selection to items matching any listed Jellyfin tag (case-insensitive, defaulting to `PosterPulse` or `Poster Pulse`); `GENRES` optionally limits poster selection to items matching any listed genre; `EXCLUDED_GENRES` always filters out matching genres.
+- `MEDIA_TYPES` selects movies, TV series, or both; `POSTER_TAGS` limits poster selection to items matching any listed Jellyfin tag; `GENRES` optionally limits poster selection to items matching any listed genre; `EXCLUDED_GENRES` always filters out matching genres. Text-based filters—including media types, tags, genres, collection names, selected titles, and holiday genres—are matched case-insensitively.
 - Optionally set `COLLECTIONS` to comma-separated Jellyfin collection names (BoxSets) to limit idle poster selection to those collections. Leave it empty to use the library. It also scopes top-rated movie mode when enabled.
 - Set `TOP_RATED_MOVIE_COUNT` above zero to rotate among that many top-rated movies, bypassing genre, holiday, and selected-title filters. Ranking uses Jellyfin's `CommunityRating` metadata; ensure your Jellyfin metadata provider populates it.
-- When `HOLIDAY_MODE=true`, the matching holiday's genre replaces `GENRES` for its configured date range. Holiday date ranges repeat yearly and may cross New Year.
+- When `HOLIDAY_MODE=true`, the matching holiday's genres replace `GENRES` for its configured date range. A media item must have every configured holiday genre; regular `GENRES` still matches any listed genre. Holiday date ranges repeat yearly and may cross New Year.
 - Both display modes rotate idle posters and cycle between multiple active playback posters every `IDLE_REFRESH_MINUTES` (default: 30 minutes). They still check for playback changes every `REFRESH_SECONDS`.
 - Recent posters are cached locally; if Jellyfin is unreachable, the display uses the last `POSTER_CACHE_SIZE` cached posters (default: 10).
 - Posters are auto-rotated so the long side of the poster aligns with the long side of the screen.
@@ -85,7 +85,7 @@ HALLOWEEN_DAYS=10/20-10/31
 THANKSGIVING_GENRE=Family
 THANKSGIVING_DAYS=11/20-11/30
 ```
-For each entry in `HOLIDAYS`, define `<HOLIDAY_NAME>_GENRE` and `<HOLIDAY_NAME>_DAYS`, replacing spaces and punctuation with underscores. For example, `Valentine's Day` uses `VALENTINE_S_DAY_GENRE` and `VALENTINE_S_DAY_DAYS`. Multiple active holiday genre rules are combined.
+For each entry in `HOLIDAYS`, define `<HOLIDAY_NAME>_GENRE` and `<HOLIDAY_NAME>_DAYS`, replacing spaces and punctuation with underscores. For example, `Valentine's Day` uses `VALENTINE_S_DAY_GENRE` and `VALENTINE_S_DAY_DAYS`. If a holiday has multiple comma-separated genres, a media item must have all of them. Multiple active holiday genre rules are combined, and all genres from those rules must match.
 
 #### Automated LCD setup
 From a Mac or Linux computer, deploy and configure a Raspberry Pi with Raspberry Pi OS Desktop over SSH:

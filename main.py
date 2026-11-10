@@ -350,7 +350,7 @@ class JellyfinClient:
                 last_item_id=last_item_id,
             )
 
-        genres = self._current_genres()
+        genres, require_all_genres = self._current_genre_filter()
         user_id = self.resolve_user_id()
 
         items_url = f"{self.base_url}/Users/{user_id}/Items"
@@ -396,8 +396,13 @@ class JellyfinClient:
             items = [
                 item
                 for item in items
-                if genres.intersection(
-                    str(genre).casefold() for genre in (item.get("Genres") or [])
+                if self._matches_genre_filter(
+                    {
+                        str(genre).casefold()
+                        for genre in (item.get("Genres") or [])
+                    },
+                    genres,
+                    require_all_genres,
                 )
             ]
             if not items:
@@ -557,7 +562,13 @@ class JellyfinClient:
         return item_id, title, image
 
     def _current_genres(self, current_date: date | None = None) -> set[str]:
-        """Use active holiday genres, otherwise the standard GENRES setting."""
+        """Return active holiday genres, otherwise the standard GENRES setting."""
+        return self._current_genre_filter(current_date)[0]
+
+    def _current_genre_filter(
+        self, current_date: date | None = None
+    ) -> tuple[set[str], bool]:
+        """Return configured genres and whether all of them must match."""
         if self.holiday_mode:
             today = current_date or date.today()
             active_rules = [
@@ -566,10 +577,15 @@ class JellyfinClient:
             if active_rules:
                 names = ", ".join(rule.name for rule in active_rules)
                 logger.info("Holiday genre mode active: %s", names)
-                return {
-                    genre.casefold() for rule in active_rules for genre in rule.genres
-                }
-        return self.genres
+                return (
+                    {
+                        genre.casefold()
+                        for rule in active_rules
+                        for genre in rule.genres
+                    },
+                    True,
+                )
+        return self.genres, False
 
     def get_active_media_sessions(self) -> list[dict[str, str]]:
         sessions_url = f"{self.base_url}/Sessions"
@@ -615,8 +631,18 @@ class JellyfinClient:
         item_tags = {str(tag).casefold() for tag in (item.get("Tags") or [])}
         return not self.poster_tags or bool(self.poster_tags.intersection(item_tags))
 
+    @staticmethod
+    def _matches_genre_filter(
+        item_genres: set[str], genres: set[str], require_all_genres: bool
+    ) -> bool:
+        if not genres:
+            return True
+        if require_all_genres:
+            return genres.issubset(item_genres)
+        return bool(genres.intersection(item_genres))
+
     def _matches_item_filters(self, item: dict, item_id: str) -> bool:
-        genres = self._current_genres()
+        genres, require_all_genres = self._current_genre_filter()
         needs_genres = bool(genres or self.excluded_genres or self.holiday_mode)
         needs_tags = bool(self.poster_tags)
         item_genres = item.get("Genres")
@@ -642,7 +668,9 @@ class JellyfinClient:
         normalized_genres = {str(genre).casefold() for genre in item_genres or []}
         if self.excluded_genres.intersection(normalized_genres):
             return False
-        return not genres or bool(genres.intersection(normalized_genres))
+        return self._matches_genre_filter(
+            normalized_genres, genres, require_all_genres
+        )
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int
