@@ -7,15 +7,17 @@ It supports two distinct display modes:
 2. **E-Ink Display (Waveshare 4-inch E6 or 7.3-inch PhotoPainter)**: A lightweight, headless e-Paper driver with 6-color Floyd-Steinberg dithering, sleep-mode power management, and smart refresh logic tailored to e-Paper refresh limits.
 
 ## Screenshots
-<img width="250" height="400" alt="IMG_3225" src="https://github.com/user-attachments/assets/f09f5665-7f0e-45fc-9487-8a7631e0cbc4" />
-<img width="250" height="400" alt="IMG_3220" src="https://github.com/user-attachments/assets/c0a4eed2-3518-4d3c-bc3b-345416a788c2" />
-<img width="250" height="400" alt="IMG_3224" src="https://github.com/user-attachments/assets/c6e35e94-bfdb-4a65-9339-3b5430c351e4" />
+<img width="250" height="350" alt="IMG_3226" src="https://github.com/user-attachments/assets/6ab9b078-47a8-4112-ae6d-69c4fab73c89" />
+<img width="250" height="350" alt="IMG_3220" src="https://github.com/user-attachments/assets/c0a4eed2-3518-4d3c-bc3b-345416a788c2" />
+<img width="250" height="350" alt="IMG_3224" src="https://github.com/user-attachments/assets/c6e35e94-bfdb-4a65-9339-3b5430c351e4" />
+<img width="250" height="350" alt="IMG_3228" src="https://github.com/user-attachments/assets/f1c08008-fd1c-408c-86d4-f453e1533a5c" />
+<img width="250" height="350" alt="IMG_3227" src="https://github.com/user-attachments/assets/8735a5f0-0ab2-4697-bcc7-b069c3fff7d5" />
 
 
 ## Hardware
 Should work on all LCD screens no matter the size, this is the size I like with a case you can 3D print <br>
 [FREENOVE Touchscreen Display 5 Inch](https://www.amazon.com/dp/B0B455LDKH?ref_=ppx_hzsearch_conn_dt_b_fed_asin_title_6&th=1)<br>
-[5Inch_LCD_DisplayCase.3mf.zip](https://github.com/user-attachments/files/34538067/5Inch_LCD_DisplayCase.3mf.zip)<br>
+[5Inch_LCD_DisplayCase.3mf.zip](https://github.com/user-attachments/files/34608595/5Inch_LCD_DisplayCase.2.3mf.zip)<br>
 [Raspberry Pi 3 Model B+](https://www.amazon.com/Raspberry-Pi-Model-Board-Plus/dp/B0BNJPL4MW/ref=sr_1_1?crid=2XGOX73JO2ZAF&dib=eyJ2IjoiMSJ9.gIGv_xElPh1m_T7EI7Yvln4029GwVLqzeMvlo0uICl_D86G3fPZEVOutKQiRDG71iZWJlPkTCFXji5kRW03ixYuAdj0UFrMref7FaPEwURJkWUD9Uu93gRDclTrCS3Gbe-bk-7HI0bfHEsFqPApcxgITmnvAMNuV_HcBEyuX5W4Q-5Vweq82cX6jXwyMMaRnb6z2wOrzbOV54vG_XXt79rH__u-Sb6j0SNj6XL8zqj7qe_n-xRAzmVOzljht6Gg3e5TT854cW4q2C2E6mhFZUpmqZHXHLEHgA2os0HWX6Sk.z0LTlOV45S0y35XPJVmQSbrA488yN-kRB-1DzMYEAkg&dib_tag=se&keywords=raspberry+pi+3b&qid=1794116536&s=electronics&sprefix=raspberry+pi+3b%2Celectronics%2C186&sr=1-1)<br>
 
 These are currently the 2 Eink displays that are supported, more can be supported with additional changes to code<br>
