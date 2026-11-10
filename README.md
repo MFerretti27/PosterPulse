@@ -21,7 +21,6 @@ Should work on all LCD screens no matter the size, this is the size I like with 
 [Raspberry Pi 3 Model B+](https://www.amazon.com/Raspberry-Pi-Model-Board-Plus/dp/B0BNJPL4MW/ref=sr_1_1?crid=2XGOX73JO2ZAF&dib=eyJ2IjoiMSJ9.gIGv_xElPh1m_T7EI7Yvln4029GwVLqzeMvlo0uICl_D86G3fPZEVOutKQiRDG71iZWJlPkTCFXji5kRW03ixYuAdj0UFrMref7FaPEwURJkWUD9Uu93gRDclTrCS3Gbe-bk-7HI0bfHEsFqPApcxgITmnvAMNuV_HcBEyuX5W4Q-5Vweq82cX6jXwyMMaRnb6z2wOrzbOV54vG_XXt79rH__u-Sb6j0SNj6XL8zqj7qe_n-xRAzmVOzljht6Gg3e5TT854cW4q2C2E6mhFZUpmqZHXHLEHgA2os0HWX6Sk.z0LTlOV45S0y35XPJVmQSbrA488yN-kRB-1DzMYEAkg&dib_tag=se&keywords=raspberry+pi+3b&qid=1794116536&s=electronics&sprefix=raspberry+pi+3b%2Celectronics%2C186&sr=1-1)<br>
 
 These are currently the 2 Eink displays that are supported, more can be supported with additional changes to code<br>
-
 [Waveshare 4-inch EInk Display](https://www.amazon.com/dp/B0DHTNHRRY?ref=ppx_yo2ov_dt_b_fed_asin_title)<br>
 [Waveshare_4-inch_EInk_DisplayCase.3mf.zip](https://github.com/user-attachments/files/34538065/Waveshare_4-inch_EInk_DisplayCase.3mf.zip)<br>
 [Raspberry Pi Zero 2W](https://www.amazon.com/dp/B0FWRPF4FV/ref=sspa_dk_detail_0?psc=1&pd_rd_i=B0FWRPF4FV&pd_rd_w=Yq3Jb&content-id=amzn1.sym.17345c9b-ef8c-4a79-bcd9-8894b1e1e0ea&pf_rd_p=17345c9b-ef8c-4a79-bcd9-8894b1e1e0ea&pf_rd_r=P00MTT26XZ6QACJEB91G&pd_rd_wg=dKmtY&pd_rd_r=c7287873-ccfc-41e8-929a-c60a2765149e&s=electronics&sp_csd=d2lkZ2V0TmFtZT1zcF9kZXRhaWw)<br>
