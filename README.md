@@ -51,6 +51,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Regular screen mode also requires Tkinter from your Python installation; pip
+cannot install its native `_tkinter` extension. On macOS with Homebrew Python 3.14:
+
+```bash
+brew install python-tk@3.14
+python -c "import tkinter; print(tkinter.TkVersion)"
+```
+
+Match the `python-tk` version to your Python major/minor version. If Homebrew
+reports an unaccepted Xcode license, run `sudo xcodebuild -license`, review and
+accept the license, then retry installation. On Debian/Raspberry Pi OS, install
+Tkinter with `sudo apt install python3-tk`. E-Ink mode does not require Tkinter.
+
 Copy environment template:
 
 ```bash

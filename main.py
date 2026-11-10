@@ -196,8 +196,8 @@ class Settings:
                         f"{key}_DAYS must use MM/DD-MM/DD format, for example 12/18-12/31."
                     )
                 try:
-                    start = datetime.strptime(start_end[0].strip(), "%m/%d")
-                    end = datetime.strptime(start_end[1].strip(), "%m/%d")
+                    start = datetime.strptime(f"{start_end[0].strip()}/2000", "%m/%d/%Y")
+                    end = datetime.strptime(f"{start_end[1].strip()}/2000", "%m/%d/%Y")
                 except ValueError as exc:
                     raise ValueError(
                         f"{key}_DAYS must use valid MM/DD-MM/DD dates."
@@ -842,7 +842,20 @@ def main() -> int:
         )
     else:
         logger.info("Initializing Regular (HDMI / GUI) display mode")
-        from displays.regular import RegularDisplay
+        try:
+            from displays.regular import RegularDisplay
+        except ModuleNotFoundError as exc:
+            if exc.name not in {"tkinter", "_tkinter"}:
+                raise
+            logger.error(
+                "Regular display requires Tkinter, which is not installed for this "
+                "Python interpreter. Tkinter cannot be installed with pip. "
+                "For Homebrew Python on macOS, run: brew install python-tk@%d.%d. "
+                "On Debian/Raspberry Pi OS, install python3-tk.",
+                sys.version_info.major,
+                sys.version_info.minor,
+            )
+            return 1
 
         display_app = RegularDisplay(
             fetch_content_fn=coordinator.fetch_item,
