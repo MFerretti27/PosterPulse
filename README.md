@@ -129,6 +129,14 @@ All settings are in `.env`; the complete, commented list is in [`.env.example`](
 
 Text filters are case-insensitive. Regular mode supports `FADE_SPEED` and `DISPLAY_ROTATION` (`0` or `180`); e-ink mode supports `EINK_ROTATION` (`0`, `90`, `180`, or `270`). The `EINK_MODEL` setting selects the panel.
 
+For LCD/regular displays, set `PROGRESS_BAR_ENABLED=true` to show a thin playback
+progress bar along the bottom. It defaults to off. Set `PROGRESS_BAR_COLOR` to a
+color name or quoted hex value, such as `PROGRESS_BAR_COLOR="#00FF00"` (default:
+white). The bar follows `DISPLAY_ROTATION` and updates every `REFRESH_SECONDS`,
+including when playback is paused or seeks. It shows the progress of the displayed
+session's movie or episode and hides when idle, offline, or duration is unknown.
+These settings do not affect e-ink displays.
+
 When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUDED_GENRES`, holiday genres, and `SELECT_MOVIES`. If `COLLECTIONS` is set, it still limits the collection of movies considered.
 
 ## What to expect

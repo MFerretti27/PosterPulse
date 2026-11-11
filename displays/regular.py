@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from PIL import (  # pyright: ignore[reportMissingImports]
     Image,
+    ImageColor,
     ImageDraw,
     ImageFont,
     ImageTk,
@@ -27,6 +28,8 @@ class RegularDisplay(BaseDisplay):
         fullscreen: bool = True,
         fade_speed: int = 5,
         rotation: int = 0,
+        progress_bar_enabled: bool = False,
+        progress_bar_color: str = "white",
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
         self.refresh_seconds = refresh_seconds
@@ -37,6 +40,10 @@ class RegularDisplay(BaseDisplay):
         if rotation not in {0, 180}:
             raise ValueError("Regular display rotation must be 0 or 180 degrees")
         self.rotation = rotation
+        self.progress_bar_enabled = progress_bar_enabled
+        if progress_bar_enabled:
+            red, green, blue = ImageColor.getcolor(progress_bar_color, "RGB")
+            progress_bar_color = f"#{red:02x}{green:02x}{blue:02x}"
 
         # Fade speed tuning:
         # Steps: 30 at speed 1, down to 4 at speed 10
@@ -82,6 +89,43 @@ class RegularDisplay(BaseDisplay):
             pady=8,
         )
         self.status.place_forget()
+        self.progress_bar = tk.Frame(self.root, bg="#222222", borderwidth=0)
+        self.progress_fill = tk.Frame(
+            self.progress_bar,
+            bg=progress_bar_color if progress_bar_enabled else "white",
+            borderwidth=0,
+        )
+
+    def _update_progress_bar(self, item: PosterDisplayItem | None) -> None:
+        if (
+            not self.progress_bar_enabled
+            or item is None
+            or not item.is_playing
+            or item.connection_lost
+            or item.playback_progress is None
+        ):
+            self.progress_bar.place_forget()
+            return
+
+        progress = max(0.0, min(1.0, item.playback_progress))
+        self.progress_bar.place(
+            relx=0.0,
+            rely=0.0 if self.rotation == 180 else 1.0,
+            relwidth=1.0,
+            height=8,
+            anchor="nw" if self.rotation == 180 else "sw",
+        )
+        if progress == 0:
+            self.progress_fill.place_forget()
+        else:
+            self.progress_fill.place(
+                relx=1.0 if self.rotation == 180 else 0.0,
+                rely=0.0,
+                relwidth=progress,
+                relheight=1.0,
+                anchor="ne" if self.rotation == 180 else "nw",
+            )
+        self.progress_bar.lift()
 
     def _on_black_canvas(self, image: Image.Image) -> Image.Image:
         """Paste image centered on full-screen canvas."""
@@ -211,6 +255,7 @@ class RegularDisplay(BaseDisplay):
                 bool(item and item.connection_lost) != was_connection_lost
             )
             self._connection_lost = bool(item and item.connection_lost)
+            self._update_progress_bar(item)
 
             if item is None:
                 if recovered:
@@ -261,10 +306,13 @@ class RegularDisplay(BaseDisplay):
             self._last_refresh_time = now
             self._fade_in_progress = True
             self._do_fade(old_canvas, new_canvas, 1, schedule_next)
+            if self.progress_bar_enabled:
+                self.progress_bar.lift()
             return
         except Exception:
             logger.exception("Poll failed")
             self._connection_lost = True
+            self._update_progress_bar(None)
             self._set_banner_text("Connection Lost")
             self._show_top_banner()
             self.status.place_forget()

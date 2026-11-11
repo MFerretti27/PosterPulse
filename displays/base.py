@@ -12,6 +12,7 @@ class PosterDisplayItem:
     is_playing: bool = False
     user_name: str | None = None
     connection_lost: bool = False
+    playback_progress: float | None = None
 
 
 class BaseDisplay(abc.ABC):
