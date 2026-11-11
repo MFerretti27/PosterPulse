@@ -102,7 +102,15 @@ class EinkSetupSshTests(LcdSetupSshTests):
     connection_error = "Failed to connect"
 
     def test_env_transfer_failure_stops_setup_and_cleans_up(self):
-        result, commands = self.run_deployment("matt@example.test:~/PosterPulse/.env")
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            script_dir = repo / ".github"
+            script_dir.mkdir()
+            script = script_dir / self.script.name
+            script.write_text(self.script.read_text())
+            (repo / ".env").touch()
+            self.script = script
+            result, commands = self.run_deployment("matt@example.test:~/PosterPulse/.env")
         self.assertEqual(result.returncode, 23)
         self.assertFalse(any("sudo bash" in call[-1] for call in commands))
         self.assert_shared_connection_cleaned_up(commands)
