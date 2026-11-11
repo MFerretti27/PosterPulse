@@ -11,14 +11,17 @@ from main import JellyfinClient, PosterCoordinator, Settings
 
 class ProgressSettingsTests(unittest.TestCase):
     def load_settings(self, **overrides):
-        with patch("main.load_dotenv"), patch.dict(
-            os.environ,
-            {
-                "JELLYFIN_URL": "http://jellyfin",
-                "JELLYFIN_API_TOKEN": "test-token",
-                **overrides,
-            },
-            clear=True,
+        with (
+            patch("main.load_dotenv"),
+            patch.dict(
+                os.environ,
+                {
+                    "JELLYFIN_URL": "http://jellyfin",
+                    "JELLYFIN_API_TOKEN": "test-token",
+                    **overrides,
+                },
+                clear=True,
+            ),
         ):
             return Settings.from_env()
 
@@ -36,11 +39,15 @@ class ProgressSettingsTests(unittest.TestCase):
 
     def test_invalid_enabled_color_reports_configuration_error(self):
         with self.assertRaisesRegex(ValueError, "PROGRESS_BAR_COLOR"):
-            self.load_settings(PROGRESS_BAR_ENABLED="true", PROGRESS_BAR_COLOR="invalid")
+            self.load_settings(
+                PROGRESS_BAR_ENABLED="true", PROGRESS_BAR_COLOR="invalid"
+            )
 
     def test_eink_ignores_color(self):
         settings = self.load_settings(
-            DISPLAY_TYPE="eink", PROGRESS_BAR_ENABLED="true", PROGRESS_BAR_COLOR="invalid"
+            DISPLAY_TYPE="eink",
+            PROGRESS_BAR_ENABLED="true",
+            PROGRESS_BAR_COLOR="invalid",
         )
         self.assertEqual(settings.display_type, "eink")
 
@@ -51,28 +58,37 @@ class PlaybackProgressTests(unittest.TestCase):
             "Id": "session",
             "UserName": "Viewer",
             "NowPlayingItem": {
-                "Id": "movie", "Type": media_type, "Name": "Title",
-                "SeriesId": "series", "RunTimeTicks": duration,
+                "Id": "movie",
+                "Type": media_type,
+                "Name": "Title",
+                "SeriesId": "series",
+                "RunTimeTicks": duration,
             },
             "PlayState": {"PositionTicks": position, "IsPaused": True},
         }
 
     def test_progress_uses_movie_or_episode_duration_even_when_paused(self):
         settings = Settings(
-            jellyfin_url="http://jellyfin", api_token="test-token",
-            poster_tags=[], media_types=["Movie", "Series"],
+            jellyfin_url="http://jellyfin",
+            api_token="test-token",
+            poster_tags=[],
+            media_types=["Movie", "Series"],
         )
         client = JellyfinClient(settings)
         for media_type, poster_id in (("Movie", "movie"), ("Episode", "series")):
             with self.subTest(media_type=media_type):
                 client._get = Mock()
-                client._get.return_value.json.return_value = [self.make_session(media_type)]
+                client._get.return_value.json.return_value = [
+                    self.make_session(media_type)
+                ]
                 active = client.get_active_media_sessions()
                 self.assertEqual(active[0]["item_id"], poster_id)
                 self.assertEqual(active[0]["playback_progress"], 0.25)
                 coordinator = PosterCoordinator(client, settings)
                 coordinator.poster_cache = Mock()
-                client.get_item_poster_image = Mock(return_value=Image.new("RGB", (10, 10)))
+                client.get_item_poster_image = Mock(
+                    return_value=Image.new("RGB", (10, 10))
+                )
                 item = coordinator.fetch_item(10, 10)
                 self.assertEqual(item.playback_progress, 0.25)
 
@@ -103,10 +119,13 @@ class PlaybackProgressTests(unittest.TestCase):
 
 class RegularProgressBarTests(unittest.TestCase):
     def make_display(self, **overrides):
-        with patch("displays.regular.tk.Tk"), patch(
-            "displays.regular.tk.Label"
-        ), patch("displays.regular.tk.Frame", side_effect=lambda *args, **kwargs: Mock()), patch.object(
-            RegularDisplay, "_make_banner_image"
+        with (
+            patch("displays.regular.tk.Tk"),
+            patch("displays.regular.tk.Label"),
+            patch(
+                "displays.regular.tk.Frame", side_effect=lambda *args, **kwargs: Mock()
+            ),
+            patch.object(RegularDisplay, "_make_banner_image"),
         ):
             display = RegularDisplay(Mock(), **overrides)
         display._make_banner_image = Mock()
@@ -114,7 +133,9 @@ class RegularProgressBarTests(unittest.TestCase):
 
     def make_item(self, **overrides):
         return PosterDisplayItem(
-            item_id="movie", title="Title", image=Image.new("RGB", (10, 10)),
+            item_id="movie",
+            title="Title",
+            image=Image.new("RGB", (10, 10)),
             **overrides,
         )
 
@@ -125,8 +146,12 @@ class RegularProgressBarTests(unittest.TestCase):
         display.progress_bar.place_forget.assert_called_once()
         display = self.make_display(progress_bar_enabled=True)
         for item in (
-            None, self.make_item(), self.make_item(is_playing=True),
-            self.make_item(is_playing=True, connection_lost=True, playback_progress=0.5),
+            None,
+            self.make_item(),
+            self.make_item(is_playing=True),
+            self.make_item(
+                is_playing=True, connection_lost=True, playback_progress=0.5
+            ),
         ):
             display.progress_bar.reset_mock()
             display._update_progress_bar(item)
@@ -175,7 +200,9 @@ class RegularProgressBarTests(unittest.TestCase):
         )
         display._do_fade = Mock()
         display.refresh_once()
-        self.assertEqual(display.progress_fill.place.call_args.kwargs["relheight"], 0.75)
+        self.assertEqual(
+            display.progress_fill.place.call_args.kwargs["relheight"], 0.75
+        )
         display._do_fade.assert_not_called()
 
     def test_poll_failure_hides_progress(self):
@@ -187,7 +214,9 @@ class RegularProgressBarTests(unittest.TestCase):
 
     def test_zero_progress_has_no_fill(self):
         display = self.make_display(progress_bar_enabled=True)
-        display._update_progress_bar(self.make_item(is_playing=True, playback_progress=0))
+        display._update_progress_bar(
+            self.make_item(is_playing=True, playback_progress=0)
+        )
         display.progress_fill.place_forget.assert_called_once()
 
 

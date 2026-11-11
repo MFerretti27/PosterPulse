@@ -19,20 +19,26 @@ class LcdSetupSshTests(unittest.TestCase):
             for command in ("ssh", "scp", "tar"):
                 executable = root / command
                 executable.write_text(
-                    '#!/bin/sh\n'
+                    "#!/bin/sh\n"
                     'printf "%s\\n" "---${0##*/}" "$@" >> "$CALLS"\n'
-                    'for arg do\n'
+                    "for arg do\n"
                     '    if [ -n "$FAILURE" ] && [ "$arg" = "$FAILURE" ]; then\n'
-                    '        exit 23\n'
-                    '    fi\n'
-                    'done\n'
+                    "        exit 23\n"
+                    "    fi\n"
+                    "done\n"
                     'case "$*" in\n'
                     '    *"tar -xzf"*) cat >/dev/null ;;\n'
-                    'esac\n'
+                    "esac\n"
                 )
                 executable.chmod(0o755)
             result = subprocess.run(
-                ["bash", str(self.script), "-ip=example.test", "-user=matt", "-port=2222"],
+                [
+                    "bash",
+                    str(self.script),
+                    "-ip=example.test",
+                    "-user=matt",
+                    "-port=2222",
+                ],
                 check=False,
                 env={
                     **os.environ,
@@ -105,7 +111,9 @@ class EinkSetupSshTests(LcdSetupSshTests):
 class LcdSetupOutputTests(unittest.TestCase):
     def test_local_summary_has_desktop_specific_next_steps(self):
         source = SCRIPT.read_text()
-        start = source.index('\necho ""\necho "======', source.index("if [[ -S /tmp/.X11"))
+        start = source.index(
+            '\necho ""\necho "======', source.index("if [[ -S /tmp/.X11")
+        )
         result = subprocess.run(
             ["bash", "-eu", "-c", source[start:]],
             check=False,
@@ -121,7 +129,8 @@ class LcdSetupOutputTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         for text in (
-            "Setup Completed Successfully!", "Next Steps:",
+            "Setup Completed Successfully!",
+            "Next Steps:",
             "nano /home/matt/PosterPulse/.env",
             "/home/matt/.config/autostart/posterpulse.desktop",
             "tail -f /home/matt/.local/state/posterpulse/regular.log",
@@ -159,9 +168,7 @@ class LcdSetupLaunchTests(unittest.TestCase):
             venv = root / ".venv"
             (venv / "bin").mkdir(parents=True)
             python = venv / "bin" / "python"
-            python.write_text(
-                '#!/bin/sh\nprintf "%s" "$$" > "$PID_FILE"\n' + app
-            )
+            python.write_text('#!/bin/sh\nprintf "%s" "$$" > "$PID_FILE"\n' + app)
             python.chmod(0o755)
 
             environment = {

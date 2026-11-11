@@ -18,16 +18,19 @@ class RegularDisplayStartupTests(unittest.TestCase):
             return original_import(name, *args, **kwargs)
 
         settings = Settings(jellyfin_url="http://jellyfin", api_token="test-token")
-        with patch("main.Settings.from_env", return_value=settings), patch(
-            "main.PosterCoordinator"
-        ), patch("builtins.__import__", side_effect=import_without_module):
+        with (
+            patch("main.Settings.from_env", return_value=settings),
+            patch("main.PosterCoordinator"),
+            patch("builtins.__import__", side_effect=import_without_module),
+        ):
             return main()
 
     def test_missing_tkinter_reports_installation_instructions(self):
         for module_name in ("tkinter", "_tkinter"):
-            with self.subTest(module_name=module_name), self.assertLogs(
-                "main", level="ERROR"
-            ) as logs:
+            with (
+                self.subTest(module_name=module_name),
+                self.assertLogs("main", level="ERROR") as logs,
+            ):
                 self.assertEqual(self.run_with_missing_module(module_name), 1)
 
             self.assertIn("cannot be installed with pip", logs.output[0])

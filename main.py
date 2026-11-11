@@ -109,10 +109,9 @@ class Settings:
         display_rotation = int(os.getenv("DISPLAY_ROTATION", "0")) % 360
         if display_rotation not in {0, 180}:
             raise ValueError("DISPLAY_ROTATION must be 0 or 180 for regular displays")
-        progress_bar_enabled = (
-            os.getenv("PROGRESS_BAR_ENABLED", "false").strip().lower()
-            in {"1", "true", "yes", "on"}
-        )
+        progress_bar_enabled = os.getenv(
+            "PROGRESS_BAR_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
         progress_bar_color = os.getenv("PROGRESS_BAR_COLOR", "lightblue").strip()
         if progress_bar_enabled and display_type == "regular":
             try:
@@ -219,7 +218,9 @@ class Settings:
                         f"{key}_DAYS must use MM/DD-MM/DD format, for example 12/18-12/31."
                     )
                 try:
-                    start = datetime.strptime(f"{start_end[0].strip()}/2000", "%m/%d/%Y")
+                    start = datetime.strptime(
+                        f"{start_end[0].strip()}/2000", "%m/%d/%Y"
+                    )
                     end = datetime.strptime(f"{start_end[1].strip()}/2000", "%m/%d/%Y")
                 except ValueError as exc:
                     raise ValueError(
@@ -422,10 +423,7 @@ class JellyfinClient:
                 item
                 for item in items
                 if self._matches_genre_filter(
-                    {
-                        str(genre).casefold()
-                        for genre in (item.get("Genres") or [])
-                    },
+                    {str(genre).casefold() for genre in (item.get("Genres") or [])},
                     genres,
                     require_all_genres,
                 )
@@ -711,9 +709,7 @@ class JellyfinClient:
         normalized_genres = {str(genre).casefold() for genre in item_genres or []}
         if self.excluded_genres.intersection(normalized_genres):
             return False
-        return self._matches_genre_filter(
-            normalized_genres, genres, require_all_genres
-        )
+        return self._matches_genre_filter(normalized_genres, genres, require_all_genres)
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int

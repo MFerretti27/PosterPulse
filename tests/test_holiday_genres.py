@@ -9,18 +9,22 @@ from main import HolidayRule, JellyfinClient, Settings
 
 class HolidayDateSettingsTests(unittest.TestCase):
     def make_settings(self, days):
-        with patch("main.load_dotenv"), patch.dict(
-            os.environ,
-            {
-                "JELLYFIN_URL": "http://jellyfin",
-                "JELLYFIN_API_TOKEN": "test-token",
-                "HOLIDAY_MODE": "true",
-                "HOLIDAYS": "Holiday",
-                "HOLIDAY_GENRE": "Family",
-                "HOLIDAY_DAYS": days,
-            },
-            clear=True,
-        ), warnings.catch_warnings():
+        with (
+            patch("main.load_dotenv"),
+            patch.dict(
+                os.environ,
+                {
+                    "JELLYFIN_URL": "http://jellyfin",
+                    "JELLYFIN_API_TOKEN": "test-token",
+                    "HOLIDAY_MODE": "true",
+                    "HOLIDAYS": "Holiday",
+                    "HOLIDAY_GENRE": "Family",
+                    "HOLIDAY_DAYS": days,
+                },
+                clear=True,
+            ),
+            warnings.catch_warnings(),
+        ):
             warnings.simplefilter("error", DeprecationWarning)
             return Settings.from_env()
 
@@ -48,8 +52,9 @@ class HolidayDateSettingsTests(unittest.TestCase):
 
     def test_invalid_calendar_dates_are_rejected(self):
         for days in ("02/30-03/01", "12/18-04/31", "13/01-12/31"):
-            with self.subTest(days=days), self.assertRaisesRegex(
-                ValueError, "must use valid MM/DD-MM/DD dates"
+            with (
+                self.subTest(days=days),
+                self.assertRaisesRegex(ValueError, "must use valid MM/DD-MM/DD dates"),
             ):
                 self.make_settings(days)
 
@@ -105,9 +110,7 @@ class HolidayGenreFilterTests(unittest.TestCase):
 
         self.assertFalse(client._matches_item_filters({"Genres": ["Christmas"]}, "one"))
         self.assertTrue(
-            client._matches_item_filters(
-                {"Genres": ["CHRISTMAS", "family"]}, "both"
-            )
+            client._matches_item_filters({"Genres": ["CHRISTMAS", "family"]}, "both")
         )
 
     def test_regular_genres_continue_matching_any_configured_genre(self):
