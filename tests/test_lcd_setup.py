@@ -1,5 +1,6 @@
 import os
 import signal
+import socket
 import subprocess
 import tempfile
 import unittest
@@ -123,22 +124,26 @@ class LcdSetupOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
             env_file.touch()
-            result = subprocess.run(
-                ["bash", "-eu", "-c", source[start:]],
-                check=False,
-                env={
-                    **os.environ,
-                    "ENV_FILE": str(env_file),
-                    "REPO_DIR": directory,
-                    "VENV_DIR": str(Path(directory) / ".venv"),
-                    "USER_HOME": directory,
-                    "CURRENT_USER": "matt",
-                    "AUTOSTART_FILE": str(Path(directory) / "posterpulse.desktop"),
-                },
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
+            socket_path = Path(directory) / "X0"
+            source = source.replace("/tmp/.X11-unix/X0", str(socket_path))
+            with socket.socket(socket.AF_UNIX) as display_socket:
+                display_socket.bind(str(socket_path))
+                result = subprocess.run(
+                    ["bash", "-eu", "-c", source[start:]],
+                    check=False,
+                    env={
+                        **os.environ,
+                        "ENV_FILE": str(env_file),
+                        "REPO_DIR": directory,
+                        "VENV_DIR": str(Path(directory) / ".venv"),
+                        "USER_HOME": directory,
+                        "CURRENT_USER": "matt",
+                        "AUTOSTART_FILE": str(Path(directory) / "posterpulse.desktop"),
+                    },
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("skipping the immediate launch", result.stdout)
         self.assertIn("Next Steps:", result.stdout)
@@ -188,7 +193,7 @@ class LcdSetupLaunchTests(unittest.TestCase):
         source = SCRIPT.read_text()
         start = source.index('    runuser -u "$CURRENT_USER" -- sh -c')
         end_marker = (
-            '        echo "Started PosterPulse in the current graphical session. '
+            '    echo "Started PosterPulse in the current graphical session. '
             'Log: ${LOG_FILE}"'
         )
         end = source.index(end_marker, start) + len(end_marker)

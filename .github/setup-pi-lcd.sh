@@ -206,34 +206,33 @@ EOF
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$AUTOSTART_FILE"
 
 echo "==> [5/5] Checking the graphical session and starting PosterPulse..."
-if grep -Eq '^JELLYFIN_URL=[^[:space:]]' "$ENV_FILE" &&
+if [[ -S /tmp/.X11-unix/X0 ]] &&
+    grep -Eq '^JELLYFIN_URL=[^[:space:]]' "$ENV_FILE" &&
     grep -Eq '^JELLYFIN_API_TOKEN=[^[:space:]]' "$ENV_FILE"; then
-    if [[ -S /tmp/.X11-unix/X0 ]]; then
-        while IFS= read -r pid; do
-            kill "$pid"
-        done < <(pgrep -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" || test "$?" -eq 1)
-        LOG_DIR="${USER_HOME}/.local/state/posterpulse"
-        LOG_FILE="${LOG_DIR}/regular.log"
-        install -d -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$LOG_DIR"
-        # Open the log as the desktop user, not as the privileged setup process.
-        runuser -u "$CURRENT_USER" -- sh -c '
-            set -eu
-            export DISPLAY=:0
-            cd "$1"
-            : >> "$4"
-            nohup "$2" "$3" >"$4" 2>&1 </dev/null &
-            pid=$!
-            sleep 2
-            if ! kill -0 "$pid" 2>/dev/null; then
-                echo "Error: PosterPulse exited during startup. See $4" >&2
-                cat "$4" >&2
-                exit 1
-            fi
-        ' sh "$REPO_DIR" "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" "$LOG_FILE"
-        echo "Started PosterPulse in the current graphical session. Log: ${LOG_FILE}"
-    else
-        echo "Desktop autostart is installed. Log into the LCD desktop to start PosterPulse."
-    fi
+    while IFS= read -r pid; do
+        kill "$pid"
+    done < <(pgrep -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" || test "$?" -eq 1)
+    LOG_DIR="${USER_HOME}/.local/state/posterpulse"
+    LOG_FILE="${LOG_DIR}/regular.log"
+    install -d -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$LOG_DIR"
+    # Open the log as the desktop user, not as the privileged setup process.
+    runuser -u "$CURRENT_USER" -- sh -c '
+        set -eu
+        export DISPLAY=:0
+        cd "$1"
+        : >> "$4"
+        nohup "$2" "$3" >"$4" 2>&1 </dev/null &
+        pid=$!
+        sleep 2
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Error: PosterPulse exited during startup. See $4" >&2
+            cat "$4" >&2
+            exit 1
+        fi
+    ' sh "$REPO_DIR" "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" "$LOG_FILE"
+    echo "Started PosterPulse in the current graphical session. Log: ${LOG_FILE}"
+elif [[ ! -S /tmp/.X11-unix/X0 ]]; then
+    echo "Desktop autostart is installed. Log into the LCD desktop to start PosterPulse."
 else
     echo "Jellyfin credentials are not configured; skipping the immediate launch."
 fi
