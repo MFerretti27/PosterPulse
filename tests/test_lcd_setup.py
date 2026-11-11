@@ -117,6 +117,33 @@ class EinkSetupSshTests(LcdSetupSshTests):
 
 
 class LcdSetupOutputTests(unittest.TestCase):
+    def test_missing_credentials_skip_launch_and_print_next_steps(self):
+        source = SCRIPT.read_text()
+        start = source.index('echo "==> [5/5]')
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.touch()
+            result = subprocess.run(
+                ["bash", "-eu", "-c", source[start:]],
+                check=False,
+                env={
+                    **os.environ,
+                    "ENV_FILE": str(env_file),
+                    "REPO_DIR": directory,
+                    "VENV_DIR": str(Path(directory) / ".venv"),
+                    "USER_HOME": directory,
+                    "CURRENT_USER": "matt",
+                    "AUTOSTART_FILE": str(Path(directory) / "posterpulse.desktop"),
+                },
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("skipping the immediate launch", result.stdout)
+        self.assertIn("Next Steps:", result.stdout)
+        self.assertNotIn("Started PosterPulse", result.stdout)
+
     def test_local_summary_has_desktop_specific_next_steps(self):
         source = SCRIPT.read_text()
         start = source.index(
@@ -160,7 +187,11 @@ class LcdSetupLaunchTests(unittest.TestCase):
     def run_launcher(self, app, blocked_log=False):
         source = SCRIPT.read_text()
         start = source.index('    runuser -u "$CURRENT_USER" -- sh -c')
-        end = source.index("\nelse\n", start)
+        end_marker = (
+            '        echo "Started PosterPulse in the current graphical session. '
+            'Log: ${LOG_FILE}"'
+        )
+        end = source.index(end_marker, start) + len(end_marker)
         launch = source[start:end]
 
         with tempfile.TemporaryDirectory(prefix="posterpulse setup ") as directory:
