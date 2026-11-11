@@ -29,7 +29,7 @@ class RegularDisplay(BaseDisplay):
         fade_speed: int = 5,
         rotation: int = 0,
         progress_bar_enabled: bool = False,
-        progress_bar_color: str = "white",
+        progress_bar_color: str = "lightblue",
     ) -> None:
         self.fetch_content_fn = fetch_content_fn
         self.refresh_seconds = refresh_seconds
@@ -109,21 +109,21 @@ class RegularDisplay(BaseDisplay):
 
         progress = max(0.0, min(1.0, item.playback_progress))
         self.progress_bar.place(
-            relx=0.0,
-            rely=0.0 if self.rotation == 180 else 1.0,
-            relwidth=1.0,
-            height=8,
-            anchor="nw" if self.rotation == 180 else "sw",
+            relx=0.0 if self.rotation == 180 else 1.0,
+            rely=0.0,
+            width=8,
+            relheight=1.0,
+            anchor="nw" if self.rotation == 180 else "ne",
         )
         if progress == 0:
             self.progress_fill.place_forget()
         else:
             self.progress_fill.place(
-                relx=1.0 if self.rotation == 180 else 0.0,
-                rely=0.0,
-                relwidth=progress,
-                relheight=1.0,
-                anchor="ne" if self.rotation == 180 else "nw",
+                relx=0.0,
+                rely=0.0 if self.rotation == 180 else 1.0,
+                relwidth=1.0,
+                relheight=progress,
+                anchor="nw" if self.rotation == 180 else "sw",
             )
         self.progress_bar.lift()
 

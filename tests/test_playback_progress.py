@@ -22,10 +22,10 @@ class ProgressSettingsTests(unittest.TestCase):
         ):
             return Settings.from_env()
 
-    def test_defaults_off_and_white(self):
+    def test_defaults_off_and_light_blue(self):
         settings = self.load_settings()
         self.assertFalse(settings.progress_bar_enabled)
-        self.assertEqual(settings.progress_bar_color, "white")
+        self.assertEqual(settings.progress_bar_color, "lightblue")
 
     def test_enable_and_choose_color(self):
         settings = self.load_settings(
@@ -136,18 +136,33 @@ class RegularProgressBarTests(unittest.TestCase):
     def test_placement_and_fill_follow_rotation(self):
         for rotation in (0, 180):
             display = self.make_display(progress_bar_enabled=True, rotation=rotation)
+            display._show_top_banner()
             display._update_progress_bar(
                 self.make_item(is_playing=True, playback_progress=0.25)
             )
-            self.assertEqual(display.progress_bar.place.call_args.kwargs["height"], 8)
             self.assertEqual(
-                display.progress_bar.place.call_args.kwargs["rely"],
-                1.0 if rotation == 0 else 0.0,
+                display.progress_bar.place.call_args.kwargs,
+                {
+                    "relx": 1.0 if rotation == 0 else 0.0,
+                    "rely": 0.0,
+                    "width": 8,
+                    "relheight": 1.0,
+                    "anchor": "ne" if rotation == 0 else "nw",
+                },
             )
-            self.assertEqual(display.progress_fill.place.call_args.kwargs["relwidth"], 0.25)
             self.assertEqual(
-                display.progress_fill.place.call_args.kwargs["anchor"],
-                "nw" if rotation == 0 else "ne",
+                display.progress_fill.place.call_args.kwargs,
+                {
+                    "relx": 0.0,
+                    "rely": 1.0 if rotation == 0 else 0.0,
+                    "relwidth": 1.0,
+                    "relheight": 0.25,
+                    "anchor": "sw" if rotation == 0 else "nw",
+                },
+            )
+            self.assertEqual(
+                display.top_banner.place.call_args.kwargs.get("relx", 0.0),
+                0.0 if rotation == 0 else 1.0,
             )
 
     def test_progress_updates_without_refading_same_poster(self):
@@ -160,7 +175,7 @@ class RegularProgressBarTests(unittest.TestCase):
         )
         display._do_fade = Mock()
         display.refresh_once()
-        self.assertEqual(display.progress_fill.place.call_args.kwargs["relwidth"], 0.75)
+        self.assertEqual(display.progress_fill.place.call_args.kwargs["relheight"], 0.75)
         display._do_fade.assert_not_called()
 
     def test_poll_failure_hides_progress(self):

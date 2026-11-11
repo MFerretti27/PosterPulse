@@ -56,7 +56,7 @@ class Settings:
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     display_rotation: int = 0  # Regular/LCD display rotation: 0 or 180 degrees
     progress_bar_enabled: bool = False
-    progress_bar_color: str = "white"
+    progress_bar_color: str = "lightblue"
     selected_movies: list[str] = field(default_factory=list)
     collections: list[str] = field(default_factory=list)
     media_types: list[str] = field(default_factory=lambda: ["Movie"])
@@ -113,7 +113,7 @@ class Settings:
             os.getenv("PROGRESS_BAR_ENABLED", "false").strip().lower()
             in {"1", "true", "yes", "on"}
         )
-        progress_bar_color = os.getenv("PROGRESS_BAR_COLOR", "white").strip()
+        progress_bar_color = os.getenv("PROGRESS_BAR_COLOR", "lightblue").strip()
         if progress_bar_enabled and display_type == "regular":
             try:
                 ImageColor.getcolor(progress_bar_color, "RGB")

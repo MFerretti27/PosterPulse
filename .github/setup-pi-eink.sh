@@ -118,7 +118,21 @@ if [[ -n "${TARGET_IP}" ]]; then
     fi
 
     echo "==> [1/3] Testing SSH connection to ${REMOTE_USER}@${TARGET_IP}..."
-    if ! ssh -o BatchMode=no -o ConnectTimeout=10 -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "echo Connection OK" 2>/dev/null; then
+    SSH_CONTROL_DIR="$(mktemp -d /tmp/posterpulse-ssh.XXXXXX)"
+    SSH_OPTIONS=(-o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlMaster=no \
+        -o BatchMode=yes -o ConnectTimeout=10)
+    cleanup_ssh() {
+        # Cleanup must not hide a deployment failure if the connection already closed.
+        ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" -O exit \
+            "${REMOTE_USER}@${TARGET_IP}" >/dev/null 2>&1 || true
+        rm -rf "$SSH_CONTROL_DIR"
+    }
+    trap cleanup_ssh EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if ! ssh -o BatchMode=no -o ControlMaster=yes \
+        -o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlPersist=no \
+        -o ConnectTimeout=10 -fN -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}"; then
         echo ""
         echo "Failed to connect to ${REMOTE_USER}@${TARGET_IP}:${SSH_PORT}."
         echo "Please verify:"
@@ -127,9 +141,10 @@ if [[ -n "${TARGET_IP}" ]]; then
         echo "  3. The username '${REMOTE_USER}' is correct (change with -user=<username>)."
         exit 1
     fi
+    echo "Connection OK"
 
     echo "==> [2/3] Transferring PosterPulse project files to ~/PosterPulse..."
-    ssh -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
+    ssh "${SSH_OPTIONS[@]}" -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
 
     # Stream repository files excluding virtualenvs and temporary build caches
     tar --exclude='.git' \
@@ -142,16 +157,16 @@ if [[ -n "${TARGET_IP}" ]]; then
         --exclude='.ruff_cache' \
         --exclude='poster_cache' \
         --exclude='*.png' \
-        -czf - -C "${REPO_DIR}" . | ssh -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
+        -czf - -C "${REPO_DIR}" . | ssh "${SSH_OPTIONS[@]}" -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
 
     # If local .env exists, copy it to the remote device as well
     if [[ -f "${REPO_DIR}/.env" ]]; then
         echo "Syncing local .env file to ~/PosterPulse/.env..."
-        scp -P "${SSH_PORT}" "${REPO_DIR}/.env" "${REMOTE_USER}@${TARGET_IP}:~/PosterPulse/.env" 2>/dev/null || true
+        scp "${SSH_OPTIONS[@]}" -P "${SSH_PORT}" "${REPO_DIR}/.env" "${REMOTE_USER}@${TARGET_IP}:~/PosterPulse/.env"
     fi
 
     echo "==> [3/3] Running setup on remote Raspberry Pi..."
-    ssh -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash .github/setup-pi-eink.sh --local -user=${REMOTE_USER}"
+    ssh "${SSH_OPTIONS[@]}" -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash .github/setup-pi-eink.sh --local -user=${REMOTE_USER}"
 
     echo ""
     echo "=========================================================="

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
+# ==============================================================================
 # PosterPulse setup for Raspberry Pi OS with an LCD/HDMI display.
 # Usage from a development computer:
 #   bash .github/setup-pi-lcd.sh -ip=10.0.0.119 -user=matt
+#
 # Usage locally on the Pi:
 #   sudo bash .github/setup-pi-lcd.sh --local
+# ==============================================================================
 
 set -euo pipefail
 
@@ -54,26 +57,40 @@ done
 
 if [[ -n "$TARGET_IP" ]]; then
     echo "Deploying PosterPulse LCD setup to ${REMOTE_USER}@${TARGET_IP}:${SSH_PORT}"
-    if ! ssh -o BatchMode=no -o ConnectTimeout=10 -p "$SSH_PORT" \
-        "${REMOTE_USER}@${TARGET_IP}" "echo Connection OK"; then
+    SSH_CONTROL_DIR="$(mktemp -d /tmp/posterpulse-ssh.XXXXXX)"
+    SSH_OPTIONS=(-o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlMaster=no \
+        -o BatchMode=yes -o ConnectTimeout=10)
+    cleanup_ssh() {
+        # Cleanup must not hide a deployment failure if the connection already closed.
+        ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" -O exit \
+            "${REMOTE_USER}@${TARGET_IP}" >/dev/null 2>&1 || true
+        rm -rf "$SSH_CONTROL_DIR"
+    }
+    trap cleanup_ssh EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if ! ssh -o BatchMode=no -o ControlMaster=yes \
+        -o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlPersist=no \
+        -o ConnectTimeout=10 -fN -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}"; then
         echo "Could not connect to ${REMOTE_USER}@${TARGET_IP}. Check SSH and the username." >&2
         exit 1
     fi
+    echo "Connection OK"
 
-    ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
+    ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
     tar --exclude='.git' --exclude='.venv' --exclude='venv' \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='.DS_Store' \
         --exclude='.mypy_cache' --exclude='.ruff_cache' \
         --exclude='poster_cache' --exclude='*.png' \
         -czf - -C "$REPO_DIR" . |
-        ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
+        ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
 
     if [[ -f "${REPO_DIR}/.env" ]]; then
-        scp -P "$SSH_PORT" "${REPO_DIR}/.env" \
+        scp "${SSH_OPTIONS[@]}" -P "$SSH_PORT" "${REPO_DIR}/.env" \
             "${REMOTE_USER}@${TARGET_IP}:~/PosterPulse/.env"
     fi
 
-    ssh -t -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" \
+    ssh "${SSH_OPTIONS[@]}" -t -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" \
         "cd ~/PosterPulse && sudo bash .github/setup-pi-lcd.sh --local -user=${REMOTE_USER}"
     exit 0
 fi
@@ -164,10 +181,25 @@ if [[ -S /tmp/.X11-unix/X0 ]]; then
     while IFS= read -r pid; do
         kill "$pid"
     done < <(pgrep -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" || test "$?" -eq 1)
-    runuser -u "$CURRENT_USER" -- env DISPLAY=:0 nohup \
-        "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" \
-        >/tmp/posterpulse-regular.log 2>&1 </dev/null &
-    echo "Started PosterPulse in the current graphical session."
+    LOG_DIR="${USER_HOME}/.local/state/posterpulse"
+    LOG_FILE="${LOG_DIR}/regular.log"
+    install -d -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$LOG_DIR"
+    # Open the log as the desktop user, not as the privileged setup process.
+    runuser -u "$CURRENT_USER" -- sh -c '
+        set -eu
+        export DISPLAY=:0
+        cd "$1"
+        : >> "$4"
+        nohup "$2" "$3" >"$4" 2>&1 </dev/null &
+        pid=$!
+        sleep 2
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Error: PosterPulse exited during startup. See $4" >&2
+            cat "$4" >&2
+            exit 1
+        fi
+    ' sh "$REPO_DIR" "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" "$LOG_FILE"
+    echo "Started PosterPulse in the current graphical session. Log: ${LOG_FILE}"
 else
     echo "Desktop autostart is installed. Log into the LCD desktop to start PosterPulse."
 fi
