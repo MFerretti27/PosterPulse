@@ -111,7 +111,9 @@ class EinkSetupSshTests(LcdSetupSshTests):
             script.write_text(self.script.read_text())
             (repo / ".env").touch()
             self.script = script
-            result, commands = self.run_deployment("matt@example.test:~/PosterPulse/.env")
+            result, commands = self.run_deployment(
+                "matt@example.test:~/PosterPulse/.env"
+            )
         self.assertEqual(result.returncode, 23)
         self.assertFalse(any("sudo bash" in call[-1] for call in commands))
         self.assert_shared_connection_cleaned_up(commands)
