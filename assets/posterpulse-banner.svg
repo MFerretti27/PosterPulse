@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title description">
+  <title id="title">PosterPulse</title>
+  <desc id="description">A glowing display rotates through abstract movie posters beside the PosterPulse name.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111326"/>
+      <stop offset="1" stop-color="#202044"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffbd59"/>
+      <stop offset="1" stop-color="#ff735d"/>
+    </linearGradient>
+    <linearGradient id="posterOne" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#eaa95d"/>
+      <stop offset="1" stop-color="#a73d5b"/>
+    </linearGradient>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="420" rx="28" fill="url(#background)"/>
+  <circle cx="934" cy="204" r="152" fill="#8061d8" opacity=".16" filter="url(#softGlow)"/>
+  <path d="M0 344C226 276 392 435 650 351s370-101 550-53v122H0Z" fill="#ffffff" opacity=".025"/>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <path d="M92 123h12v48h-12zM110 111h12v60h-12zM128 133h12v38h-12z" fill="url(#glow)"/>
+    <text x="92" y="226" fill="#f7f4ff" font-size="54" font-weight="700" letter-spacing="1">PosterPulse</text>
+    <text x="94" y="270" fill="#b9b8d0" font-size="22" letter-spacing=".5">Your library, on display.</text>
+    <g transform="translate(94 313)">
+      <circle cx="7" cy="7" r="6" fill="#74d2b1"/>
+      <text x="24" y="13" fill="#aaa9c3" font-size="14" letter-spacing="2">JELLYFIN POSTER DISPLAY</text>
+    </g>
+  </g>
+
+  <g transform="translate(765 34)">
+    <rect x="14" y="16" width="260" height="352" rx="20" fill="#070812" opacity=".5"/>
+    <rect x="0" y="0" width="260" height="352" rx="20" fill="#292a40" stroke="#52516d" stroke-width="2"/>
+    <rect x="12" y="12" width="236" height="328" rx="12" fill="#131421"/>
+
+    <g transform="translate(24 24)">
+      <rect width="212" height="304" rx="7" fill="url(#posterOne)"/>
+      <circle cx="151" cy="94" r="43" fill="#ffd28a" opacity=".86"/>
+      <path d="M0 210 37 170l28 22 42-69 31 44 31-31 43 39v129H0Z" fill="#71405b" opacity=".88"/>
+      <path d="m0 239 41-31 36 23 38-35 42 37 34-28 21 17v82H0Z" fill="#493552"/>
+      <path d="M0 270q42-23 81-3t75 2q30-21 56 0v35H0Z" fill="#29283d"/>
+      <path d="M62 258c2-20 12-33 25-33s23 13 25 33l8 46H54Z" fill="#1c2033"/>
+      <circle cx="87" cy="221" r="10" fill="#1c2033"/>
+    </g>
+  </g>
+</svg>

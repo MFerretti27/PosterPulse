@@ -1,5 +1,13 @@
 # PosterPulse
 
+<p align="center">
+  <img src="assets/posterpulse-banner.svg" alt="PosterPulse Jellyfin poster display banner" width="800"/>
+</p>
+
+<p align="center">
+  <a href="https://buymeacoffee.com/mferretti27"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=black" alt="Buy me a coffee"/></a>
+</p>
+
 PosterPulse turns a screen connected to your Jellyfin server into a rotating movie-poster display. It shows what's currently playing, or rotates through posters from your library when nothing is playing.
 
 Choose the setup that matches your screen:
