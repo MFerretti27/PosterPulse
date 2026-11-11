@@ -71,6 +71,8 @@ class LcdSetupSshTests(unittest.TestCase):
         result, commands = self.run_deployment()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(any("sudo bash" in call[-1] for call in commands))
+        for stage in ("[1/3]", "[2/3]", "[3/3]", "Remote Deployment Complete!"):
+            self.assertIn(stage, result.stdout)
         self.assert_shared_connection_cleaned_up(commands)
 
     def test_connection_failure_stops_deployment_and_cleans_up(self):
@@ -85,6 +87,7 @@ class LcdSetupSshTests(unittest.TestCase):
             f"cd ~/PosterPulse && sudo bash .github/{self.script.name} --local -user=matt"
         )
         self.assertEqual(result.returncode, 23)
+        self.assertNotIn("Remote Deployment Complete!", result.stdout)
         self.assert_shared_connection_cleaned_up(commands)
 
 
@@ -97,6 +100,42 @@ class EinkSetupSshTests(LcdSetupSshTests):
         self.assertEqual(result.returncode, 23)
         self.assertFalse(any("sudo bash" in call[-1] for call in commands))
         self.assert_shared_connection_cleaned_up(commands)
+
+
+class LcdSetupOutputTests(unittest.TestCase):
+    def test_local_summary_has_desktop_specific_next_steps(self):
+        source = SCRIPT.read_text()
+        start = source.index('\necho ""\necho "======', source.index("if [[ -S /tmp/.X11"))
+        result = subprocess.run(
+            ["bash", "-eu", "-c", source[start:]],
+            env={
+                **os.environ,
+                "ENV_FILE": "/home/matt/PosterPulse/.env",
+                "USER_HOME": "/home/matt",
+                "AUTOSTART_FILE": "/home/matt/.config/autostart/posterpulse.desktop",
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for text in (
+            "Setup Completed Successfully!", "Next Steps:",
+            "nano /home/matt/PosterPulse/.env",
+            "/home/matt/.config/autostart/posterpulse.desktop",
+            "tail -f /home/matt/.local/state/posterpulse/regular.log",
+            "log out and back in",
+        ):
+            self.assertIn(text, result.stdout)
+        self.assertNotIn("sudo systemctl", result.stdout)
+        self.assertNotIn("sudo reboot", result.stdout)
+
+    def test_remote_summary_has_lcd_log_command_and_custom_port(self):
+        result, _ = LcdSetupSshTests().run_deployment()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ssh -p 2222 matt@example.test", result.stdout)
+        self.assertIn("tail -f ~/.local/state/posterpulse/regular.log", result.stdout)
+        self.assertNotIn("journalctl", result.stdout)
 
 
 class LcdSetupLaunchTests(unittest.TestCase):

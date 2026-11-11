@@ -49,6 +49,9 @@ Press `Esc` to quit regular mode. Set `FULLSCREEN=true` in `.env` for kiosk use.
 
 The setup scripts can configure the Pi locally or deploy to it from a Mac/Linux computer over SSH. Before remote setup, create `.env` and enter your Jellyfin URL and API key.
 
+<details>
+<summary>HDMI or LCD screen setup</summary>
+
 ### HDMI or LCD screen
 
 The Pi needs Raspberry Pi OS Desktop and a connected display. From your computer, replace the example address and username with your Pi’s details:
@@ -71,6 +74,11 @@ The script installs display dependencies and configures PosterPulse to start whe
 If a desktop session is already running, it also launches PosterPulse immediately
 and checks for early startup failures. That launch writes its log to
 `~/.local/state/posterpulse/regular.log` under the Pi user's home directory.
+
+</details>
+
+<details>
+<summary>E-ink screen setup, supported panels, and preview</summary>
 
 ### E-ink screen
 
@@ -120,9 +128,14 @@ python main.py
 
 PosterPulse writes a preview image to `eink_preview.png` by default. This shows the dithered image without requiring SPI hardware.
 
+</details>
+
 ## Choose which posters to show
 
 All settings are in `.env`; the complete, commented list is in [`.env.example`](.env.example). Comma-separated values are supported for the filters below.
+
+<details>
+<summary>Poster filters, rotation, and playback progress settings</summary>
 
 | Setting | What it does |
 | --- | --- |
@@ -151,6 +164,8 @@ These settings do not affect e-ink displays.
 
 When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUDED_GENRES`, holiday genres, and `SELECT_MOVIES`. If `COLLECTIONS` is set, it still limits the collection of movies considered.
 
+</details>
+
 ## What to expect
 
 - When configured media is playing, PosterPulse shows the active movie or TV-series poster.
@@ -162,6 +177,9 @@ When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUD
 
 ## Hardware examples
 
+<details>
+<summary>Example parts and printable cases</summary>
+
 These are example parts, not requirements for regular screens:
 
 - [Raspberry Pi 3 Model B+](https://www.amazon.com/Raspberry-Pi-Model-Board-Plus/dp/B0BNJPL4MW)
@@ -170,6 +188,8 @@ These are example parts, not requirements for regular screens:
 - [Waveshare 4-inch e-ink display](https://www.amazon.com/dp/B0DHTNHRRY)
 - [Printable 4-inch e-ink case](https://github.com/user-attachments/files/34538065/Waveshare_4-inch_EInk_DisplayCase.3mf.zip)
 - [KLAYERS 7.3-inch PhotoPainter display](https://www.amazon.com/dp/B0G934X8YG)
+
+</details>
 
 ## Troubleshooting
 
