@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
+# ==============================================================================
 # PosterPulse setup for Raspberry Pi OS with an LCD/HDMI display.
 # Usage from a development computer:
 #   bash .github/setup-pi-lcd.sh -ip=10.0.0.119 -user=matt
+#
 # Usage locally on the Pi:
 #   sudo bash .github/setup-pi-lcd.sh --local
+# ==============================================================================
 
 set -euo pipefail
 
@@ -53,28 +56,61 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$TARGET_IP" ]]; then
-    echo "Deploying PosterPulse LCD setup to ${REMOTE_USER}@${TARGET_IP}:${SSH_PORT}"
-    if ! ssh -o BatchMode=no -o ConnectTimeout=10 -p "$SSH_PORT" \
-        "${REMOTE_USER}@${TARGET_IP}" "echo Connection OK"; then
+    echo "=========================================================="
+    echo "  PosterPulse: Remote Deployment for LCD/HDMI Display"
+    echo "=========================================================="
+    echo "Target Host: ${REMOTE_USER}@${TARGET_IP} (Port: ${SSH_PORT})"
+    echo "Source Path: ${REPO_DIR}"
+    echo ""
+    echo "==> [1/3] Testing SSH connection to ${REMOTE_USER}@${TARGET_IP}..."
+    SSH_CONTROL_DIR="$(mktemp -d /tmp/posterpulse-ssh.XXXXXX)"
+    SSH_OPTIONS=(-o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlMaster=no \
+        -o BatchMode=yes -o ConnectTimeout=10)
+    cleanup_ssh() {
+        # Cleanup must not hide a deployment failure if the connection already closed.
+        ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" -O exit \
+            "${REMOTE_USER}@${TARGET_IP}" >/dev/null 2>&1 || true
+        rm -rf "$SSH_CONTROL_DIR"
+    }
+    trap cleanup_ssh EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if ! ssh -o BatchMode=no -o ControlMaster=yes \
+        -o "ControlPath=${SSH_CONTROL_DIR}/control" -o ControlPersist=no \
+        -o ConnectTimeout=10 -fN -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}"; then
         echo "Could not connect to ${REMOTE_USER}@${TARGET_IP}. Check SSH and the username." >&2
         exit 1
     fi
+    echo "Connection OK"
 
-    ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
+    echo "==> [2/3] Transferring PosterPulse project files to ~/PosterPulse..."
+    ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "mkdir -p ~/PosterPulse"
     tar --exclude='.git' --exclude='.venv' --exclude='venv' \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='.DS_Store' \
         --exclude='.mypy_cache' --exclude='.ruff_cache' \
         --exclude='poster_cache' --exclude='*.png' \
         -czf - -C "$REPO_DIR" . |
-        ssh -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
+        ssh "${SSH_OPTIONS[@]}" -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" "tar -xzf - -C ~/PosterPulse"
 
     if [[ -f "${REPO_DIR}/.env" ]]; then
-        scp -P "$SSH_PORT" "${REPO_DIR}/.env" \
+        echo "Syncing local .env file to ~/PosterPulse/.env..."
+        scp "${SSH_OPTIONS[@]}" -P "$SSH_PORT" "${REPO_DIR}/.env" \
             "${REMOTE_USER}@${TARGET_IP}:~/PosterPulse/.env"
     fi
 
-    ssh -t -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" \
+    echo "==> [3/3] Running setup on remote Raspberry Pi..."
+    ssh "${SSH_OPTIONS[@]}" -t -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" \
         "cd ~/PosterPulse && sudo bash .github/setup-pi-lcd.sh --local -user=${REMOTE_USER}"
+    echo ""
+    echo "=========================================================="
+    echo "  Remote Deployment Complete!"
+    echo "=========================================================="
+    echo "You can now connect to your Pi anytime using:"
+    echo "  ssh -p ${SSH_PORT} ${REMOTE_USER}@${TARGET_IP}"
+    echo "To monitor logs from the LCD app launched during setup:"
+    echo "  ssh -p ${SSH_PORT} ${REMOTE_USER}@${TARGET_IP} 'tail -f ~/.local/state/posterpulse/regular.log'"
+    echo "LCD mode starts in the desktop session, not as a systemd service."
+    echo "=========================================================="
     exit 0
 fi
 
@@ -101,13 +137,20 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 
-printf 'Configuring PosterPulse for LCD under user %s\n' "$CURRENT_USER"
+echo "=========================================================="
+echo "  PosterPulse Local Setup: Raspberry Pi + LCD/HDMI Display"
+echo "=========================================================="
+echo "Target User:     ${CURRENT_USER}"
+echo "Repository Path: ${REPO_DIR}"
+echo ""
 
+echo "==> [1/5] Installing required system packages..."
 apt-get update -y
 apt-get install -y --no-install-recommends \
     python3-dev python3-venv python3-pip python3-tk \
     python3-pil python3-pil.imagetk
 
+echo "==> [2/5] Setting up Python virtual environment..."
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
     sudo -u "$CURRENT_USER" python3 -m venv --system-site-packages "$VENV_DIR"
 fi
@@ -116,6 +159,7 @@ sudo -u "$CURRENT_USER" "${VENV_DIR}/bin/pip" install -r "${REPO_DIR}/requiremen
 sudo -u "$CURRENT_USER" "${VENV_DIR}/bin/python" -c \
     'import tkinter; from PIL import Image, ImageTk; print("Tkinter and Pillow ImageTk are ready")'
 
+echo "==> [3/5] Configuring .env for LCD display..."
 ENV_FILE="${REPO_DIR}/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
     sudo -u "$CURRENT_USER" cp "${REPO_DIR}/.env.example" "$ENV_FILE"
@@ -144,6 +188,7 @@ set_env_if_missing "FADE_SPEED" "8"
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$ENV_FILE"
 
 # The e-ink service is headless; regular mode must run inside the desktop session.
+echo "==> [4/5] Installing desktop autostart..."
 systemctl disable --now posterpulse.service >/dev/null 2>&1 || true
 AUTOSTART_DIR="${USER_HOME}/.config/autostart"
 AUTOSTART_FILE="${AUTOSTART_DIR}/posterpulse.desktop"
@@ -160,16 +205,57 @@ X-GNOME-Autostart-enabled=true
 EOF
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$AUTOSTART_FILE"
 
-if [[ -S /tmp/.X11-unix/X0 ]]; then
+echo "==> [5/5] Checking the graphical session and starting PosterPulse..."
+if [[ -S /tmp/.X11-unix/X0 ]] &&
+    grep -Eq '^JELLYFIN_URL=[^[:space:]]' "$ENV_FILE" &&
+    grep -Eq '^JELLYFIN_API_TOKEN=[^[:space:]]' "$ENV_FILE"; then
     while IFS= read -r pid; do
         kill "$pid"
     done < <(pgrep -u "$CURRENT_USER" -f "^${VENV_DIR}/bin/python ${REPO_DIR}/main.py$" || test "$?" -eq 1)
-    runuser -u "$CURRENT_USER" -- env DISPLAY=:0 nohup \
-        "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" \
-        >/tmp/posterpulse-regular.log 2>&1 </dev/null &
-    echo "Started PosterPulse in the current graphical session."
-else
+    LOG_DIR="${USER_HOME}/.local/state/posterpulse"
+    LOG_FILE="${LOG_DIR}/regular.log"
+    install -d -o "$CURRENT_USER" -g "$CURRENT_GROUP" "$LOG_DIR"
+    # Open the log as the desktop user, not as the privileged setup process.
+    runuser -u "$CURRENT_USER" -- sh -c '
+        set -eu
+        export DISPLAY=:0
+        cd "$1"
+        : >> "$4"
+        nohup "$2" "$3" >"$4" 2>&1 </dev/null &
+        pid=$!
+        sleep 2
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Error: PosterPulse exited during startup. See $4" >&2
+            cat "$4" >&2
+            exit 1
+        fi
+    ' sh "$REPO_DIR" "${VENV_DIR}/bin/python" "${REPO_DIR}/main.py" "$LOG_FILE"
+    echo "Started PosterPulse in the current graphical session. Log: ${LOG_FILE}"
+elif [[ ! -S /tmp/.X11-unix/X0 ]]; then
     echo "Desktop autostart is installed. Log into the LCD desktop to start PosterPulse."
+else
+    echo "Jellyfin credentials are not configured; skipping the immediate launch."
 fi
 
-echo "LCD setup complete. DISPLAY_TYPE=regular; idle poster rotation defaults to 30 minutes."
+echo ""
+echo "=========================================================="
+echo "  Setup Completed Successfully!"
+echo "=========================================================="
+echo ""
+echo "DISPLAY_TYPE=regular; idle poster rotation defaults to 30 minutes."
+echo ""
+echo "Next Steps:"
+echo "1. Edit ${ENV_FILE} to set your Jellyfin credentials:"
+echo "   nano ${ENV_FILE}"
+echo "   - JELLYFIN_URL=http://<your-jellyfin-ip>:8096"
+echo "   - JELLYFIN_API_TOKEN=<your-jellyfin-token>"
+echo ""
+echo "2. Log into the Pi's LCD desktop to start PosterPulse automatically."
+echo "   After changing settings, rerun setup or log out and back in."
+echo "   Desktop autostart: ${AUTOSTART_FILE}"
+echo ""
+echo "3. To view logs from the LCD app launched during setup:"
+echo "   tail -f ${USER_HOME}/.local/state/posterpulse/regular.log"
+echo "   This log is created when setup launches the app in an active desktop session."
+echo "   LCD mode uses desktop autostart, not the e-ink systemd service."
+echo ""

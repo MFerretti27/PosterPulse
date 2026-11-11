@@ -49,6 +49,9 @@ Press `Esc` to quit regular mode. Set `FULLSCREEN=true` in `.env` for kiosk use.
 
 The setup scripts can configure the Pi locally or deploy to it from a Mac/Linux computer over SSH. Before remote setup, create `.env` and enter your Jellyfin URL and API key.
 
+<details>
+<summary>HDMI or LCD screen setup</summary>
+
 ### HDMI or LCD screen
 
 The Pi needs Raspberry Pi OS Desktop and a connected display. From your computer, replace the example address and username with your Pi’s details:
@@ -57,6 +60,10 @@ The Pi needs Raspberry Pi OS Desktop and a connected display. From your computer
 bash .github/setup-pi-lcd.sh -ip=192.168.1.50 -user=pi
 ```
 
+Remote LCD setup reuses one SSH connection for all transfers and setup commands,
+so SSH authentication is only needed once per run. The Pi may separately prompt
+once for your sudo password. The connection is closed when setup finishes.
+
 Or, on the Pi itself:
 
 ```bash
@@ -64,6 +71,14 @@ sudo bash .github/setup-pi-lcd.sh --local
 ```
 
 The script installs display dependencies and configures PosterPulse to start when the desktop session opens.
+If a desktop session is already running, it also launches PosterPulse immediately
+and checks for early startup failures. That launch writes its log to
+`~/.local/state/posterpulse/regular.log` under the Pi user's home directory.
+
+</details>
+
+<details>
+<summary>E-ink screen setup, supported panels, and preview</summary>
 
 ### E-ink screen
 
@@ -72,6 +87,10 @@ The setup script configures the 7.3-inch PhotoPainter by default. From your comp
 ```bash
 bash .github/setup-pi-eink.sh -ip=192.168.1.50 -user=pi
 ```
+
+Remote e-ink setup also reuses one SSH connection: one SSH authentication per
+run, plus a separate sudo password prompt if required. The connection is closed
+when setup finishes, including if deployment fails.
 
 Or, on the Pi itself:
 
@@ -109,9 +128,14 @@ python main.py
 
 PosterPulse writes a preview image to `eink_preview.png` by default. This shows the dithered image without requiring SPI hardware.
 
+</details>
+
 ## Choose which posters to show
 
 All settings are in `.env`; the complete, commented list is in [`.env.example`](.env.example). Comma-separated values are supported for the filters below.
+
+<details>
+<summary>Poster filters, rotation, and playback progress settings</summary>
 
 | Setting | What it does |
 | --- | --- |
@@ -129,7 +153,18 @@ All settings are in `.env`; the complete, commented list is in [`.env.example`](
 
 Text filters are case-insensitive. Regular mode supports `FADE_SPEED` and `DISPLAY_ROTATION` (`0` or `180`); e-ink mode supports `EINK_ROTATION` (`0`, `90`, `180`, or `270`). The `EINK_MODEL` setting selects the panel.
 
+For LCD/regular displays, set `PROGRESS_BAR_ENABLED=true` to show a thin playback
+progress bar along the edge opposite the Currently Playing banner (right at 0°
+rotation, left at 180°). It defaults to off. Set `PROGRESS_BAR_COLOR` to a
+color name or quoted hex value, such as `PROGRESS_BAR_COLOR="#00FF00"` (default:
+light blue). The bar follows `DISPLAY_ROTATION` and updates every `REFRESH_SECONDS`,
+including when playback is paused or seeks. It shows the progress of the displayed
+session's movie or episode and hides when idle, offline, or duration is unknown.
+These settings do not affect e-ink displays.
+
 When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUDED_GENRES`, holiday genres, and `SELECT_MOVIES`. If `COLLECTIONS` is set, it still limits the collection of movies considered.
+
+</details>
 
 ## What to expect
 
@@ -142,6 +177,9 @@ When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUD
 
 ## Hardware examples
 
+<details>
+<summary>Example parts and printable cases</summary>
+
 These are example parts, not requirements for regular screens:
 
 - [Raspberry Pi 3 Model B+](https://www.amazon.com/Raspberry-Pi-Model-Board-Plus/dp/B0BNJPL4MW)
@@ -150,6 +188,8 @@ These are example parts, not requirements for regular screens:
 - [Waveshare 4-inch e-ink display](https://www.amazon.com/dp/B0DHTNHRRY)
 - [Printable 4-inch e-ink case](https://github.com/user-attachments/files/34538065/Waveshare_4-inch_EInk_DisplayCase.3mf.zip)
 - [KLAYERS 7.3-inch PhotoPainter display](https://www.amazon.com/dp/B0G934X8YG)
+
+</details>
 
 ## Troubleshooting
 

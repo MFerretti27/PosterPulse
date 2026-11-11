@@ -7,10 +7,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import TypedDict
 
 import requests  # type: ignore[import]
 from dotenv import load_dotenv  # type: ignore[import]
-from PIL import Image  # type: ignore[import]
+from PIL import Image, ImageColor  # type: ignore[import]
 
 from displays.base import BaseDisplay, PosterDisplayItem
 from displays.cache import PosterCache
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 class JellyfinConnectionError(RuntimeError):
     """Raised when Jellyfin responds with an unsuccessful HTTP status."""
+
+
+class ActiveMediaSession(TypedDict):
+    session_id: str
+    item_id: str
+    title: str
+    user_name: str
+    playback_progress: float | None
 
 
 @dataclass(frozen=True)
@@ -46,6 +55,8 @@ class Settings:
     fullscreen: bool = True
     fade_speed: int = 8  # 1 (slowest) to 10 (fastest)
     display_rotation: int = 0  # Regular/LCD display rotation: 0 or 180 degrees
+    progress_bar_enabled: bool = False
+    progress_bar_color: str = "lightblue"
     selected_movies: list[str] = field(default_factory=list)
     collections: list[str] = field(default_factory=list)
     media_types: list[str] = field(default_factory=lambda: ["Movie"])
@@ -98,6 +109,17 @@ class Settings:
         display_rotation = int(os.getenv("DISPLAY_ROTATION", "0")) % 360
         if display_rotation not in {0, 180}:
             raise ValueError("DISPLAY_ROTATION must be 0 or 180 for regular displays")
+        progress_bar_enabled = os.getenv(
+            "PROGRESS_BAR_ENABLED", "false"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        progress_bar_color = os.getenv("PROGRESS_BAR_COLOR", "lightblue").strip()
+        if progress_bar_enabled and display_type == "regular":
+            try:
+                ImageColor.getcolor(progress_bar_color, "RGB")
+            except ValueError as exc:
+                raise ValueError(
+                    "PROGRESS_BAR_COLOR must be a color name or hex color (e.g. #00FF00)"
+                ) from exc
         selected_movies = [
             title.strip()
             for title in os.getenv("SELECT_MOVIES", "").split(",")
@@ -196,7 +218,9 @@ class Settings:
                         f"{key}_DAYS must use MM/DD-MM/DD format, for example 12/18-12/31."
                     )
                 try:
-                    start = datetime.strptime(f"{start_end[0].strip()}/2000", "%m/%d/%Y")
+                    start = datetime.strptime(
+                        f"{start_end[0].strip()}/2000", "%m/%d/%Y"
+                    )
                     end = datetime.strptime(f"{start_end[1].strip()}/2000", "%m/%d/%Y")
                 except ValueError as exc:
                     raise ValueError(
@@ -252,6 +276,8 @@ class Settings:
             fullscreen=fullscreen,
             fade_speed=fade_speed,
             display_rotation=display_rotation,
+            progress_bar_enabled=progress_bar_enabled,
+            progress_bar_color=progress_bar_color,
             selected_movies=selected_movies,
             collections=collections,
             media_types=media_types,
@@ -397,10 +423,7 @@ class JellyfinClient:
                 item
                 for item in items
                 if self._matches_genre_filter(
-                    {
-                        str(genre).casefold()
-                        for genre in (item.get("Genres") or [])
-                    },
+                    {str(genre).casefold() for genre in (item.get("Genres") or [])},
                     genres,
                     require_all_genres,
                 )
@@ -587,13 +610,13 @@ class JellyfinClient:
                 )
         return self.genres, False
 
-    def get_active_media_sessions(self) -> list[dict[str, str]]:
+    def get_active_media_sessions(self) -> list[ActiveMediaSession]:
         sessions_url = f"{self.base_url}/Sessions"
         response = self._get(
             sessions_url, params={"ActiveWithinSeconds": "3600"}, timeout=15
         )
         sessions = response.json()
-        active_movies: list[dict[str, str]] = []
+        active_movies: list[ActiveMediaSession] = []
 
         for session in sessions:
             now_playing = session.get("NowPlayingItem") or {}
@@ -622,10 +645,28 @@ class JellyfinClient:
                     "item_id": str(item_id),
                     "title": str(title),
                     "user_name": str(session.get("UserName", "Unknown User")),
+                    "playback_progress": self._playback_progress(session),
                 }
             )
 
         return active_movies
+
+    @staticmethod
+    def _playback_progress(session: dict) -> float | None:
+        position = (session.get("PlayState") or {}).get("PositionTicks")
+        duration = (session.get("NowPlayingItem") or {}).get("RunTimeTicks")
+        if position is None or duration is None:
+            return None
+        if (
+            not isinstance(position, int)
+            or not isinstance(duration, int)
+            or duration <= 0
+        ):
+            logger.warning(
+                "Invalid Jellyfin playback position or duration; hiding progress bar"
+            )
+            return None
+        return max(0.0, min(1.0, position / duration))
 
     def _matches_poster_tags(self, item: dict) -> bool:
         item_tags = {str(tag).casefold() for tag in (item.get("Tags") or [])}
@@ -668,9 +709,7 @@ class JellyfinClient:
         normalized_genres = {str(genre).casefold() for genre in item_genres or []}
         if self.excluded_genres.intersection(normalized_genres):
             return False
-        return self._matches_genre_filter(
-            normalized_genres, genres, require_all_genres
-        )
+        return self._matches_genre_filter(normalized_genres, genres, require_all_genres)
 
     def get_item_poster_image(
         self, item_id: str, max_width: int, max_height: int
@@ -769,6 +808,7 @@ class PosterCoordinator:
                 image=image,
                 is_playing=True,
                 user_name=user_name,
+                playback_progress=selected.get("playback_progress"),
             )
             self._cache_item(item)
             return item
@@ -865,6 +905,8 @@ def main() -> int:
             fullscreen=settings.fullscreen,
             fade_speed=settings.fade_speed,
             rotation=settings.display_rotation,
+            progress_bar_enabled=settings.progress_bar_enabled,
+            progress_bar_color=settings.progress_bar_color,
         )
 
     try:

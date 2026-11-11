@@ -35,9 +35,7 @@ class FilterCaseInsensitivityTests(unittest.TestCase):
         )
         client.get_item_poster_image = Mock(return_value="poster-image")
 
-        result = client.get_random_poster_image(
-            100, 100, selected_movies=["inception"]
-        )
+        result = client.get_random_poster_image(100, 100, selected_movies=["inception"])
 
         self.assertEqual(result, ("movie-id", "INCEPTION", "poster-image"))
 
@@ -50,14 +48,17 @@ class FilterCaseInsensitivityTests(unittest.TestCase):
         self.assertEqual(client._resolve_collection_ids("user-id"), ["collection-id"])
 
     def test_media_type_values_are_case_insensitive(self):
-        with patch("main.load_dotenv"), patch.dict(
-            os.environ,
-            {
-                "JELLYFIN_URL": "http://jellyfin",
-                "JELLYFIN_API_TOKEN": "test-token",
-                "MEDIA_TYPES": "movie, SERIES",
-            },
-            clear=True,
+        with (
+            patch("main.load_dotenv"),
+            patch.dict(
+                os.environ,
+                {
+                    "JELLYFIN_URL": "http://jellyfin",
+                    "JELLYFIN_API_TOKEN": "test-token",
+                    "MEDIA_TYPES": "movie, SERIES",
+                },
+                clear=True,
+            ),
         ):
             settings = Settings.from_env()
 
