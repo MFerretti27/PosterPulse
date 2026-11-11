@@ -1,10 +1,9 @@
 import os
-from pathlib import Path
 import signal
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "setup-pi-lcd.sh"
 
@@ -34,6 +33,7 @@ class LcdSetupSshTests(unittest.TestCase):
                 executable.chmod(0o755)
             result = subprocess.run(
                 ["bash", str(self.script), "-ip=example.test", "-user=matt", "-port=2222"],
+                check=False,
                 env={
                     **os.environ,
                     "PATH": f"{root}{os.pathsep}{os.environ['PATH']}",
@@ -108,6 +108,7 @@ class LcdSetupOutputTests(unittest.TestCase):
         start = source.index('\necho ""\necho "======', source.index("if [[ -S /tmp/.X11"))
         result = subprocess.run(
             ["bash", "-eu", "-c", source[start:]],
+            check=False,
             env={
                 **os.environ,
                 "ENV_FILE": "/home/matt/PosterPulse/.env",
@@ -175,6 +176,7 @@ class LcdSetupLaunchTests(unittest.TestCase):
             try:
                 result = subprocess.run(
                     ["bash", "-eu", "-c", launch],
+                    check=False,
                     env=environment,
                     capture_output=True,
                     text=True,

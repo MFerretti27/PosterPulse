@@ -42,7 +42,7 @@ class RegularDisplay(BaseDisplay):
         self.rotation = rotation
         self.progress_bar_enabled = progress_bar_enabled
         if progress_bar_enabled:
-            red, green, blue = ImageColor.getcolor(progress_bar_color, "RGB")
+            red, green, blue = ImageColor.getrgb(progress_bar_color)[:3]
             progress_bar_color = f"#{red:02x}{green:02x}{blue:02x}"
 
         # Fade speed tuning:
