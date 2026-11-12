@@ -82,10 +82,10 @@ and checks for early startup failures. That launch writes its log to
 
 ### E-ink screen
 
-The setup script configures the 7.3-inch PhotoPainter by default. From your computer, replace the example address and username with your Pi’s details:
+The setup script requires an explicit display choice: `--display=4in0e` for the 4-inch E6 or `--display=7in3e` for the 7.3-inch PhotoPainter. From your computer, replace the example address and username with your Pi's details:
 
 ```bash
-bash .github/setup-pi-eink.sh -ip=192.168.1.50 -user=pi
+bash .github/setup-pi-eink.sh -ip=192.168.1.50 -user=pi --display=4in0e
 ```
 
 Remote e-ink setup also reuses one SSH connection: one SSH authentication per
@@ -95,10 +95,10 @@ when setup finishes, including if deployment fails.
 Or, on the Pi itself:
 
 ```bash
-sudo bash .github/setup-pi-eink.sh --local
+sudo bash .github/setup-pi-eink.sh --local --display=4in0e
 ```
 
-The script installs hardware dependencies, enables SPI, and starts PosterPulse as a headless systemd service. For a 4-inch E6, update `EINK_MODEL`, `EINK_WIDTH`, `EINK_HEIGHT`, and `EINK_PWR_PIN` in `.env` after setup (see the [panel table](#supported-e-ink-panels)), then restart the service:
+The script installs hardware dependencies, enables SPI, sets `EINK_MODEL`, `EINK_WIDTH`, `EINK_HEIGHT`, and `EINK_PWR_PIN` to match the selected display (overriding those values in `.env`), and starts PosterPulse as a headless systemd service. Missing or unsupported display choices are rejected before any setup or transfer. To restart the service or view its logs:
 
 ```bash
 sudo systemctl restart posterpulse
@@ -198,6 +198,7 @@ These are example parts, not requirements for regular screens:
 - **Regular mode won’t start:** Make sure Tkinter is installed for the Python version running the app.
 - **No posters match:** Check your media types, selected titles, collections, tags, and genre filters in `.env`.
 - **E-ink screen does not update:** Check the selected model and its resolution/power-pin settings, and confirm SPI is enabled.
+- **E-ink BUSY pin timeout:** The panel did not become ready; the refresh is failed, not completed. PosterPulse powers down the controller and retries using the configured driver after 15 seconds, then 1 minute, then every 5 minutes (on the next poll after each delay). A successful refresh resets the retry delay. Jellyfin polling continues during these waits; the app never switches display models automatically. If timeouts persist, disconnect power before checking the panel cable, power supply, and configured model/power pin.
 
 For HTTPS with a self-signed certificate, add the certificate to the system trust store rather than disabling certificate verification.
 
