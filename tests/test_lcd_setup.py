@@ -178,47 +178,46 @@ class EinkDisplaySelectionTests(unittest.TestCase):
             ("7in3e", "800", "480", "27"),
         ):
             for flag in ([f"--display={model}"], ["--display", model]):
-                with self.subTest(model=model, flag=flag):
-                    with tempfile.TemporaryDirectory() as directory:
-                        env_file = Path(directory) / ".env"
-                        env_file.touch()
-                        result = subprocess.run(
-                            [
-                                "bash",
-                                "-c",
-                                argument_parsing + "\n" + configuration,
-                                str(self.script),
-                                *flag,
-                            ],
-                            env={**os.environ, "ENV_FILE": str(env_file)},
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                            check=False,
-                        )
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        values = dict(
-                            line.split("=", 1)
-                            for line in env_file.read_text().splitlines()
-                        )
-                        self.assertEqual(values["EINK_MODEL"], model)
-                        self.assertEqual(values["EINK_WIDTH"], width)
-                        self.assertEqual(values["EINK_HEIGHT"], height)
-                        self.assertEqual(values["EINK_PWR_PIN"], pin)
-                        self.assertEqual(values["DISPLAY_TYPE"], "eink")
-                        self.assertEqual(
-                            result.stdout.count("Selected E-Ink Display"), 2
-                        )
-                        for label in (
-                            f"Model:      {model}",
-                            f"Resolution: {width}x{height}",
-                            f"Power pin:  BCM {pin}",
-                        ):
-                            self.assertEqual(result.stdout.count(label), 2)
-                        self.assertIn(
-                            f"Display configuration saved to {env_file}:",
-                            result.stdout,
-                        )
+                with (
+                    self.subTest(model=model, flag=flag),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
+                    env_file = Path(directory) / ".env"
+                    env_file.touch()
+                    result = subprocess.run(
+                        [
+                            "bash",
+                            "-c",
+                            argument_parsing + "\n" + configuration,
+                            str(self.script),
+                            *flag,
+                        ],
+                        env={**os.environ, "ENV_FILE": str(env_file)},
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    values = dict(
+                        line.split("=", 1) for line in env_file.read_text().splitlines()
+                    )
+                    self.assertEqual(values["EINK_MODEL"], model)
+                    self.assertEqual(values["EINK_WIDTH"], width)
+                    self.assertEqual(values["EINK_HEIGHT"], height)
+                    self.assertEqual(values["EINK_PWR_PIN"], pin)
+                    self.assertEqual(values["DISPLAY_TYPE"], "eink")
+                    self.assertEqual(result.stdout.count("Selected E-Ink Display"), 2)
+                    for label in (
+                        f"Model:      {model}",
+                        f"Resolution: {width}x{height}",
+                        f"Power pin:  BCM {pin}",
+                    ):
+                        self.assertEqual(result.stdout.count(label), 2)
+                    self.assertIn(
+                        f"Display configuration saved to {env_file}:",
+                        result.stdout,
+                    )
 
 
 class LcdSetupOutputTests(unittest.TestCase):

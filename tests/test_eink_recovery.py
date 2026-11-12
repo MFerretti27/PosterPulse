@@ -18,12 +18,14 @@ class BusyTimeoutTests(unittest.TestCase):
     def test_busy_panel_raises_instead_of_reporting_success(self):
         config = Mock()
         config.digital_read.return_value = 0
-        with patch(
-            "displays.waveshare.epd7in3e.time.monotonic",
-            side_effect=[100.0, 100.0, 130.0],
+        with (
+            patch(
+                "displays.waveshare.epd7in3e.time.monotonic",
+                side_effect=[100.0, 100.0, 130.0],
+            ),
+            self.assertRaisesRegex(TimeoutError, "BUSY pin"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "BUSY pin"):
-                epd7in3e.EPD(config=config).read_busy_high()
+            epd7in3e.EPD(config=config).read_busy_high()
         config.delay_ms.assert_called_once_with(5)
 
     def test_refresh_stops_sending_commands_after_timeout(self):
@@ -31,9 +33,9 @@ class BusyTimeoutTests(unittest.TestCase):
         with (
             patch.object(driver, "send_command") as send_command,
             patch.object(driver, "read_busy_high", side_effect=TimeoutError),
+            self.assertRaises(TimeoutError),
         ):
-            with self.assertRaises(TimeoutError):
-                driver.turn_on_display()
+            driver.turn_on_display()
         send_command.assert_called_once_with(0x04)
 
 
