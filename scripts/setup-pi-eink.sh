@@ -5,10 +5,10 @@
 #
 # Supports:
 #   1. Remote setup from Mac/PC over SSH:
-#      .github/setup-pi-eink.sh -ip=10.0.0.27 [-user=pi] [-port=22]
+#      scripts/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e [-user=pi] [-port=22]
 #
 #   2. Local setup directly on the Raspberry Pi:
-#      sudo .github/setup-pi-eink.sh --local
+#      sudo scripts/setup-pi-eink.sh --local --display=4in0e
 # ==============================================================================
 
 set -euo pipefail
@@ -21,17 +21,20 @@ TARGET_IP=""
 REMOTE_USER="pi"
 SSH_PORT="22"
 LOCAL_MODE=false
+DISPLAY_MODEL=""
 
 show_help() {
     cat <<EOF
 Usage:
   Remote setup (from your computer to Raspberry Pi):
-    .github/setup-pi-eink.sh -ip=<PI_IP_ADDRESS> [-user=pi] [-port=22]
+    scripts/setup-pi-eink.sh -ip=<PI_IP_ADDRESS> --display=<MODEL> [-user=pi] [-port=22]
 
   Local setup (running directly on the Raspberry Pi):
-    sudo .github/setup-pi-eink.sh --local
+    sudo scripts/setup-pi-eink.sh --local --display=<MODEL>
 
 Options:
+  --display=MODEL, --display MODEL
+                               Required: 4in0e (4-inch E6) or 7in3e (PhotoPainter)
   -ip=IP, --ip=IP, -ip IP       Target IP address or hostname of the Raspberry Pi
   -user=USER, -u=USER           SSH username for the Pi (default: pi)
   -port=PORT, -p=PORT           SSH port (default: 22)
@@ -39,8 +42,8 @@ Options:
   -h, --help                    Show this help message
 
 Examples:
-  .github/setup-pi-eink.sh -ip=10.0.0.27
-  .github/setup-pi-eink.sh -ip=10.0.0.27 -user=pi
+  scripts/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e
+  scripts/setup-pi-eink.sh -ip=10.0.0.27 -user=pi --display=7in3e
 EOF
 }
 
@@ -49,6 +52,18 @@ EOF
 # ------------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --display=*|-display=*)
+            DISPLAY_MODEL="${1#*=}"
+            shift
+            ;;
+        --display|-display)
+            if [[ $# -lt 2 || "$2" =~ ^- ]]; then
+                echo "Error: --display requires 4in0e or 7in3e." >&2
+                exit 1
+            fi
+            DISPLAY_MODEL="$2"
+            shift 2
+            ;;
         -ip=*|--ip=*)
             TARGET_IP="${1#*=}"
             shift
@@ -100,6 +115,35 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "${DISPLAY_MODEL}" in
+    4in0e)
+        DISPLAY_NAME="4-inch E6"
+        DISPLAY_WIDTH=400
+        DISPLAY_HEIGHT=600
+        DISPLAY_PWR_PIN=18
+        ;;
+    7in3e)
+        DISPLAY_NAME="7.3-inch PhotoPainter"
+        DISPLAY_WIDTH=800
+        DISPLAY_HEIGHT=480
+        DISPLAY_PWR_PIN=27
+        ;;
+    *)
+        echo "Error: --display is required and must be 4in0e or 7in3e." >&2
+        exit 1
+        ;;
+esac
+show_display_configuration() {
+    echo "=========================================================="
+    echo "  Selected E-Ink Display"
+    echo "  Panel:      ${DISPLAY_NAME}"
+    echo "  Model:      ${DISPLAY_MODEL}"
+    echo "  Resolution: ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}"
+    echo "  Power pin:  BCM ${DISPLAY_PWR_PIN}"
+    echo "=========================================================="
+}
+show_display_configuration
 
 # ------------------------------------------------------------------------------
 # Mode A: Remote Deployment over SSH
@@ -166,7 +210,7 @@ if [[ -n "${TARGET_IP}" ]]; then
     fi
 
     echo "==> [3/3] Running setup on remote Raspberry Pi..."
-    ssh "${SSH_OPTIONS[@]}" -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash .github/setup-pi-eink.sh --local -user=${REMOTE_USER}"
+    ssh "${SSH_OPTIONS[@]}" -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash scripts/setup-pi-eink.sh --local -user=${REMOTE_USER} --display=${DISPLAY_MODEL}"
 
     echo ""
     echo "=========================================================="
@@ -190,7 +234,7 @@ fi
 
 if [[ $EUID -ne 0 ]]; then
     echo "Error: Local setup must be run with root privileges (sudo)." >&2
-    echo "Usage: sudo .github/setup-pi-eink.sh --local" >&2
+    echo "Usage: sudo scripts/setup-pi-eink.sh --local --display=<4in0e|7in3e>" >&2
     exit 1
 fi
 
@@ -264,7 +308,7 @@ sudo -u "${CURRENT_USER}" "${VENV_DIR}/bin/pip" install -r "${REPO_DIR}/requirem
 echo "==> [4/6] Configuring hardware permissions for user '${CURRENT_USER}'..."
 usermod -aG spi,gpio,i2c "${CURRENT_USER}" || true
 
-# 5. Initialize .env file configured for Waveshare PhotoPainter E-Ink
+# 5. Configure .env for the explicitly selected panel
 echo "==> [5/6] Configuring .env for E-Ink display..."
 ENV_FILE="${REPO_DIR}/.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -287,15 +331,19 @@ ensure_env_var() {
 }
 
 ensure_env_var "DISPLAY_TYPE" "eink"
-# Default to the PhotoPainter model when no model is configured.
-ensure_env_var "EINK_MODEL" "7in3e"
-ensure_env_var "EINK_WIDTH" "800"
-ensure_env_var "EINK_HEIGHT" "480"
-ensure_env_var "EINK_PWR_PIN" "27"
+ensure_env_var "EINK_MODEL" "${DISPLAY_MODEL}"
+ensure_env_var "EINK_WIDTH" "${DISPLAY_WIDTH}"
+ensure_env_var "EINK_HEIGHT" "${DISPLAY_HEIGHT}"
+ensure_env_var "EINK_PWR_PIN" "${DISPLAY_PWR_PIN}"
 ensure_env_var "REFRESH_SECONDS" "15"
 ensure_env_var "IDLE_REFRESH_MINUTES" "30"
 
+echo "Display configuration saved to ${ENV_FILE}:"
+show_display_configuration
+
 chown "${CURRENT_USER}:${CURRENT_USER}" "${ENV_FILE}"
+
+bash "${SCRIPT_DIR}/setup-pi-wifi.sh"
 
 # 6. Create and enable systemd service for headless startup
 echo "==> [6/6] Installing systemd service (${SERVICE_NAME})..."
