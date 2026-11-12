@@ -228,7 +228,16 @@ class EInkRecoveryTests(unittest.TestCase):
                     is_playing=True,
                 )
 
-                def fetch(width, height, allow_idle):
+                def fetch(
+                    width,
+                    height,
+                    allow_idle,
+                    *,
+                    polls=polls,
+                    display=display,
+                    active_item=active_item,
+                    item=item,
+                ):
                     polls.append(allow_idle)
                     if len(polls) == 21:
                         display.running = False
@@ -236,14 +245,20 @@ class EInkRecoveryTests(unittest.TestCase):
                         return active_item
                     return item if allow_idle else None
 
-                def sleep(seconds):
+                def sleep(seconds, *, clock=clock):
                     clock[0] += seconds
 
                 display.fetch_content_fn = fetch
                 with (
                     patch("displays.eink.signal.signal"),
-                    patch("displays.eink.time.time", side_effect=lambda: clock[0]),
-                    patch("displays.eink.time.monotonic", side_effect=lambda: clock[0]),
+                    patch(
+                        "displays.eink.time.time",
+                        side_effect=lambda clock=clock: clock[0],
+                    ),
+                    patch(
+                        "displays.eink.time.monotonic",
+                        side_effect=lambda clock=clock: clock[0],
+                    ),
                     patch("displays.eink.time.sleep", side_effect=sleep),
                     patch.object(display, "cleanup"),
                 ):
