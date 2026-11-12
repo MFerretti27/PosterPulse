@@ -55,12 +55,11 @@ class EPD:
 
     def read_busy_high(self, timeout_sec: float = 30.0) -> None:
         logger.debug("Waiting for e-Paper BUSY pin to go HIGH...")
-        start = time.time()
+        start = time.monotonic()
         while self.config.digital_read(self.busy_pin) == 0:
+            if time.monotonic() - start >= timeout_sec:
+                raise TimeoutError("Timed out waiting for 7.3-inch e-Paper BUSY pin")
             self.config.delay_ms(5)
-            if time.time() - start > timeout_sec:
-                logger.warning("Timeout waiting for e-Paper BUSY pin release.")
-                break
         logger.debug("e-Paper is idle (BUSY pin released).")
 
     def turn_on_display(self) -> None:

@@ -12,6 +12,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "setup-pi-lcd.sh"
 class LcdSetupSshTests(unittest.TestCase):
     script = SCRIPT
     connection_error = "Could not connect"
+    setup_args = ()
 
     def run_deployment(self, failure=""):
         with tempfile.TemporaryDirectory(prefix="posterpulse ssh test ") as directory:
@@ -39,6 +40,7 @@ class LcdSetupSshTests(unittest.TestCase):
                     "-ip=example.test",
                     "-user=matt",
                     "-port=2222",
+                    *self.setup_args,
                 ],
                 check=False,
                 env={
@@ -92,6 +94,7 @@ class LcdSetupSshTests(unittest.TestCase):
     def test_setup_failure_preserves_exit_status_and_cleans_up(self):
         result, commands = self.run_deployment(
             f"cd ~/PosterPulse && sudo bash .github/{self.script.name} --local -user=matt"
+            + "".join(f" {arg}" for arg in self.setup_args)
         )
         self.assertEqual(result.returncode, 23)
         self.assertNotIn("Remote Deployment Complete!", result.stdout)
@@ -101,6 +104,16 @@ class LcdSetupSshTests(unittest.TestCase):
 class EinkSetupSshTests(LcdSetupSshTests):
     script = SCRIPT.with_name("setup-pi-eink.sh")
     connection_error = "Failed to connect"
+    setup_args = ("--display=4in0e",)
+
+    def test_selected_model_is_forwarded_to_remote_setup(self):
+        for model in ("4in0e", "7in3e"):
+            with self.subTest(model=model):
+                self.setup_args = (f"--display={model}",)
+                result, commands = self.run_deployment()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                setup = next(call[-1] for call in commands if "sudo bash" in call[-1])
+                self.assertIn(f"--display={model}", setup)
 
     def test_env_transfer_failure_stops_setup_and_cleans_up(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -117,6 +130,95 @@ class EinkSetupSshTests(LcdSetupSshTests):
         self.assertEqual(result.returncode, 23)
         self.assertFalse(any("sudo bash" in call[-1] for call in commands))
         self.assert_shared_connection_cleaned_up(commands)
+
+
+class EinkDisplaySelectionTests(unittest.TestCase):
+    script = SCRIPT.with_name("setup-pi-eink.sh")
+
+    def test_missing_or_invalid_display_is_rejected_before_setup(self):
+        for args in (
+            ["--local"],
+            ["-ip=example.test"],
+            ["--local", "--display=unknown"],
+            ["--local", "--display="],
+            ["--local", "--display"],
+            ["--display", "--local"],
+        ):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    ["bash", str(self.script), *args],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("--display", result.stderr)
+                self.assertNotIn("==>", result.stdout)
+
+    def test_help_does_not_require_display(self):
+        result = subprocess.run(
+            ["bash", str(self.script), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("--display", result.stdout)
+
+    def test_selected_model_sets_matching_panel_configuration(self):
+        source = self.script.read_text()
+        argument_parsing = source[: source.index("# Mode A:")]
+        configuration = source[
+            source.index("ensure_env_var()") : source.index('chown "${CURRENT_USER}')
+        ]
+        for model, width, height, pin in (
+            ("4in0e", "400", "600", "18"),
+            ("7in3e", "800", "480", "27"),
+        ):
+            for flag in ([f"--display={model}"], ["--display", model]):
+                with self.subTest(model=model, flag=flag):
+                    with tempfile.TemporaryDirectory() as directory:
+                        env_file = Path(directory) / ".env"
+                        env_file.touch()
+                        result = subprocess.run(
+                            [
+                                "bash",
+                                "-c",
+                                argument_parsing + "\n" + configuration,
+                                str(self.script),
+                                *flag,
+                            ],
+                            env={**os.environ, "ENV_FILE": str(env_file)},
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            check=False,
+                        )
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        values = dict(
+                            line.split("=", 1)
+                            for line in env_file.read_text().splitlines()
+                        )
+                        self.assertEqual(values["EINK_MODEL"], model)
+                        self.assertEqual(values["EINK_WIDTH"], width)
+                        self.assertEqual(values["EINK_HEIGHT"], height)
+                        self.assertEqual(values["EINK_PWR_PIN"], pin)
+                        self.assertEqual(values["DISPLAY_TYPE"], "eink")
+                        self.assertEqual(
+                            result.stdout.count("Selected E-Ink Display"), 2
+                        )
+                        for label in (
+                            f"Model:      {model}",
+                            f"Resolution: {width}x{height}",
+                            f"Power pin:  BCM {pin}",
+                        ):
+                            self.assertEqual(result.stdout.count(label), 2)
+                        self.assertIn(
+                            f"Display configuration saved to {env_file}:",
+                            result.stdout,
+                        )
 
 
 class LcdSetupOutputTests(unittest.TestCase):

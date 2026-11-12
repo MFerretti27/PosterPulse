@@ -50,6 +50,8 @@ class EInkDisplay(BaseDisplay):
         self.last_display_connection_lost = False
         self.last_good_item: PosterDisplayItem | None = None
         self.hardware_update_failed = False
+        self._hardware_failure_count = 0
+        self._hardware_retry_at = 0.0
 
         # Initialize hardware driver
         self.is_hardware_available = False
@@ -163,6 +165,9 @@ class EInkDisplay(BaseDisplay):
 
     def render_item(self, item: PosterDisplayItem) -> bool:
         """Render the poster item to the e-ink screen or preview image."""
+        if self.hardware_update_failed and time.monotonic() < self._hardware_retry_at:
+            return False
+
         logger.info(
             "Rendering poster to e-Paper: '%s' (playing: %s)",
             item.title,
@@ -185,7 +190,15 @@ class EInkDisplay(BaseDisplay):
         if self.is_hardware_available and self.epd is not None:
             try:
                 logger.info("Waking e-Paper display and sending image...")
-                self.epd.init()
+                if self.epd.init() != 0:
+                    raise RuntimeError("Could not initialize e-Paper display")
+                if (
+                    self.epd.config.gpio_lib in {None, "mock"}
+                    or self.epd.config.spi is None
+                ):
+                    raise RuntimeError(
+                        "Hardware GPIO/SPI unavailable after initialization"
+                    )
                 if self.model == "4in0e":
                     if not isinstance(self.epd, epd4in0e.EPD):
                         raise RuntimeError("E6 model selected with a different driver")
@@ -196,14 +209,30 @@ class EInkDisplay(BaseDisplay):
                             "PhotoPainter model selected with a different driver"
                         )
                     self.epd.display(prepared)
-                logger.info("e-Paper refresh complete. Entering deep sleep.")
                 self.epd.sleep()
+                logger.info("e-Paper refresh complete. Entered deep sleep.")
             except (OSError, RuntimeError):
                 logger.exception("Hardware e-Paper update failed")
                 self.hardware_update_failed = True
+                retry_delays = (15, 60, 300)
+                self._hardware_failure_count = min(
+                    self._hardware_failure_count + 1, len(retry_delays)
+                )
+                retry_delay = retry_delays[self._hardware_failure_count - 1]
+                self._hardware_retry_at = time.monotonic() + retry_delay
+                logger.error(
+                    "E-Paper model %s refresh failed; retrying in %d seconds. "
+                    "If failures persist, check the configured model, power, and wiring.",
+                    self.model,
+                    retry_delay,
+                )
+                # Release GPIO/SPI and power down so the next attempt starts cleanly.
+                self.epd.config.module_exit()
                 return False
 
             self.hardware_update_failed = False
+            self._hardware_failure_count = 0
+            self._hardware_retry_at = 0.0
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
@@ -235,6 +264,7 @@ class EInkDisplay(BaseDisplay):
                 allow_idle_poster = (
                     self.last_displayed_id is None
                     or self.last_was_playing
+                    or self.hardware_update_failed
                     or now - self.last_refresh_time >= self.idle_refresh_seconds
                 )
                 item = self.fetch_content_fn(self.width, self.height, allow_idle_poster)
@@ -246,7 +276,8 @@ class EInkDisplay(BaseDisplay):
                 if item:
                     now = time.time()
                     should_refresh = (
-                        recovered
+                        self.hardware_update_failed
+                        or recovered
                         or item.connection_lost != self.last_display_connection_lost
                     )
 
