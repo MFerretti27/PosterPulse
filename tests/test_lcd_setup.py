@@ -184,12 +184,12 @@ class EinkDisplaySelectionTests(unittest.TestCase):
                 ):
                     env_file = Path(directory) / ".env"
                     env_file.touch()
+                    script = Path(directory) / self.script.name
+                    script.write_text(argument_parsing + "\n" + configuration)
                     result = subprocess.run(
                         [
                             "bash",
-                            "-c",
-                            argument_parsing + "\n" + configuration,
-                            str(self.script),
+                            str(script),
                             *flag,
                         ],
                         env={**os.environ, "ENV_FILE": str(env_file)},
