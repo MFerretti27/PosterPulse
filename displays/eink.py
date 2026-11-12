@@ -261,7 +261,11 @@ class EInkDisplay(BaseDisplay):
         while self.running:
             try:
                 now = time.time()
-                allow_idle_poster = (
+                hardware_backoff = (
+                    self.hardware_update_failed
+                    and time.monotonic() < self._hardware_retry_at
+                )
+                allow_idle_poster = not hardware_backoff and (
                     self.last_displayed_id is None
                     or self.last_was_playing
                     or self.hardware_update_failed
@@ -269,7 +273,12 @@ class EInkDisplay(BaseDisplay):
                 )
                 item = self.fetch_content_fn(self.width, self.height, allow_idle_poster)
                 was_connection_lost = self.connection_lost
-                if was_connection_lost and item is None and self.last_good_item is None:
+                if (
+                    was_connection_lost
+                    and item is None
+                    and self.last_good_item is None
+                    and not hardware_backoff
+                ):
                     item = self.fetch_content_fn(self.width, self.height, True)
                 self.connection_lost = bool(item and item.connection_lost)
                 recovered = was_connection_lost and not self.connection_lost

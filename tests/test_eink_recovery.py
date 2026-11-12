@@ -191,10 +191,67 @@ class EInkRecoveryTests(unittest.TestCase):
             self.assertLogs("displays.eink", level="ERROR"),
         ):
             display.run()
-        self.assertEqual(polls, [True, True, True, True, False])
+        self.assertEqual(polls, [True, False, False, True, False])
         self.assertEqual(display.epd.init.call_count, 2)
         self.assertEqual(display.last_displayed_id, "new")
         self.assertFalse(display.hardware_update_failed)
+
+    def test_backoff_suppresses_idle_fetches_but_polls_for_playback(self):
+        for last_displayed_id, last_was_playing, connection_lost in (
+            (None, False, False),
+            ("old", True, False),
+            (None, False, True),
+        ):
+            with self.subTest(
+                last_displayed_id=last_displayed_id,
+                last_was_playing=last_was_playing,
+                connection_lost=connection_lost,
+            ):
+                display = self.make_display()
+                display.poll_interval_seconds = 15
+                display.last_displayed_id = last_displayed_id
+                display.last_was_playing = last_was_playing
+                display.connection_lost = connection_lost
+                display.hardware_update_failed = True
+                display._hardware_retry_at = 2300.0
+                clock = [2000.0]
+                polls = []
+                item = PosterDisplayItem(
+                    item_id="new",
+                    title="New Poster",
+                    image=Image.new("RGB", (400, 600)),
+                )
+                active_item = PosterDisplayItem(
+                    item_id="playing",
+                    title="Playing",
+                    image=item.image,
+                    is_playing=True,
+                )
+
+                def fetch(width, height, allow_idle):
+                    polls.append(allow_idle)
+                    if len(polls) == 21:
+                        display.running = False
+                    if len(polls) == 2:
+                        return active_item
+                    return item if allow_idle else None
+
+                def sleep(seconds):
+                    clock[0] += seconds
+
+                display.fetch_content_fn = fetch
+                with (
+                    patch("displays.eink.signal.signal"),
+                    patch("displays.eink.time.time", side_effect=lambda: clock[0]),
+                    patch("displays.eink.time.monotonic", side_effect=lambda: clock[0]),
+                    patch("displays.eink.time.sleep", side_effect=sleep),
+                    patch.object(display, "cleanup"),
+                ):
+                    display.run()
+                self.assertEqual(polls, [False] * 20 + [True])
+                display.epd.init.assert_called_once_with()
+                self.assertEqual(display.last_displayed_id, "new")
+                self.assertFalse(display.hardware_update_failed)
 
 
 class E6RecoveryTests(EInkRecoveryTests):
