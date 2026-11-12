@@ -1,0 +1,13 @@
+[Unit]
+Description=PosterPulse disconnected Wi-Fi recovery
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/posterpulse-wifi-watchdog
+RuntimeDirectory=posterpulse-wifi
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+StateDirectory=posterpulse-wifi
+StateDirectoryMode=0700
+TimeoutStartSec=60

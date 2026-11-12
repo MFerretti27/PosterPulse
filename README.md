@@ -49,6 +49,19 @@ Press `Esc` to quit regular mode. Set `FULLSCREEN=true` in `.env` for kiosk use.
 
 The setup scripts can configure the Pi locally or deploy to it from a Mac/Linux computer over SSH. Before remote setup, create `.env` and enter your Jellyfin URL and API key.
 
+Both Pi setup scripts enable a Wi-Fi recovery timer when NetworkManager is active.
+It checks every 30 seconds and cycles Wi-Fi off for 5 seconds after observing
+5 minutes without a connected, managed Wi-Fi adapter. NetworkManager then reconnects
+saved networks with autoconnect enabled. Further attempts are at least 5 minutes
+apart. Intentionally disabled Wi-Fi, unmanaged adapters, and internet/Jellyfin-only
+outages do not trigger recovery. Cycling Wi-Fi briefly interrupts network access,
+including SSH. This runs independently of the display app.
+
+View recovery logs with `journalctl -u posterpulse-wifi.service`.
+Disable recovery with `sudo systemctl disable --now posterpulse-wifi.timer`.
+Systems without active NetworkManager print a warning and skip installation;
+setup does not replace the network manager.
+
 <details>
 <summary>HDMI or LCD screen setup</summary>
 
@@ -57,7 +70,7 @@ The setup scripts can configure the Pi locally or deploy to it from a Mac/Linux 
 The Pi needs Raspberry Pi OS Desktop and a connected display. From your computer, replace the example address and username with your Pi’s details:
 
 ```bash
-bash .github/setup-pi-lcd.sh -ip=192.168.1.50 -user=pi
+bash scripts/setup-pi-lcd.sh -ip=192.168.1.50 -user=pi
 ```
 
 Remote LCD setup reuses one SSH connection for all transfers and setup commands,
@@ -67,7 +80,7 @@ once for your sudo password. The connection is closed when setup finishes.
 Or, on the Pi itself:
 
 ```bash
-sudo bash .github/setup-pi-lcd.sh --local
+sudo bash scripts/setup-pi-lcd.sh --local
 ```
 
 The script installs display dependencies and configures PosterPulse to start when the desktop session opens.
@@ -85,7 +98,7 @@ and checks for early startup failures. That launch writes its log to
 The setup script requires an explicit display choice: `--display=4in0e` for the 4-inch E6 or `--display=7in3e` for the 7.3-inch PhotoPainter. From your computer, replace the example address and username with your Pi's details:
 
 ```bash
-bash .github/setup-pi-eink.sh -ip=192.168.1.50 -user=pi --display=4in0e
+bash scripts/setup-pi-eink.sh -ip=192.168.1.50 -user=pi --display=4in0e
 ```
 
 Remote e-ink setup also reuses one SSH connection: one SSH authentication per
@@ -95,7 +108,7 @@ when setup finishes, including if deployment fails.
 Or, on the Pi itself:
 
 ```bash
-sudo bash .github/setup-pi-eink.sh --local --display=4in0e
+sudo bash scripts/setup-pi-eink.sh --local --display=4in0e
 ```
 
 The script installs hardware dependencies, enables SPI, sets `EINK_MODEL`, `EINK_WIDTH`, `EINK_HEIGHT`, and `EINK_PWR_PIN` to match the selected display (overriding those values in `.env`), and starts PosterPulse as a headless systemd service. Missing or unsupported display choices are rejected before any setup or transfer. To restart the service or view its logs:

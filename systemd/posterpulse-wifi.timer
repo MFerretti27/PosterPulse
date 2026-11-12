@@ -1,0 +1,11 @@
+[Unit]
+Description=Check PosterPulse Wi-Fi connection every 30 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=posterpulse-wifi.service
+
+[Install]
+WantedBy=timers.target

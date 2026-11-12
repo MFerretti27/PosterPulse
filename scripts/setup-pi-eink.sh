@@ -5,10 +5,10 @@
 #
 # Supports:
 #   1. Remote setup from Mac/PC over SSH:
-#      .github/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e [-user=pi] [-port=22]
+#      scripts/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e [-user=pi] [-port=22]
 #
 #   2. Local setup directly on the Raspberry Pi:
-#      sudo .github/setup-pi-eink.sh --local --display=4in0e
+#      sudo scripts/setup-pi-eink.sh --local --display=4in0e
 # ==============================================================================
 
 set -euo pipefail
@@ -27,10 +27,10 @@ show_help() {
     cat <<EOF
 Usage:
   Remote setup (from your computer to Raspberry Pi):
-    .github/setup-pi-eink.sh -ip=<PI_IP_ADDRESS> --display=<MODEL> [-user=pi] [-port=22]
+    scripts/setup-pi-eink.sh -ip=<PI_IP_ADDRESS> --display=<MODEL> [-user=pi] [-port=22]
 
   Local setup (running directly on the Raspberry Pi):
-    sudo .github/setup-pi-eink.sh --local --display=<MODEL>
+    sudo scripts/setup-pi-eink.sh --local --display=<MODEL>
 
 Options:
   --display=MODEL, --display MODEL
@@ -42,8 +42,8 @@ Options:
   -h, --help                    Show this help message
 
 Examples:
-  .github/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e
-  .github/setup-pi-eink.sh -ip=10.0.0.27 -user=pi --display=7in3e
+  scripts/setup-pi-eink.sh -ip=10.0.0.27 --display=4in0e
+  scripts/setup-pi-eink.sh -ip=10.0.0.27 -user=pi --display=7in3e
 EOF
 }
 
@@ -210,7 +210,7 @@ if [[ -n "${TARGET_IP}" ]]; then
     fi
 
     echo "==> [3/3] Running setup on remote Raspberry Pi..."
-    ssh "${SSH_OPTIONS[@]}" -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash .github/setup-pi-eink.sh --local -user=${REMOTE_USER} --display=${DISPLAY_MODEL}"
+    ssh "${SSH_OPTIONS[@]}" -t -p "${SSH_PORT}" "${REMOTE_USER}@${TARGET_IP}" "cd ~/PosterPulse && sudo bash scripts/setup-pi-eink.sh --local -user=${REMOTE_USER} --display=${DISPLAY_MODEL}"
 
     echo ""
     echo "=========================================================="
@@ -234,7 +234,7 @@ fi
 
 if [[ $EUID -ne 0 ]]; then
     echo "Error: Local setup must be run with root privileges (sudo)." >&2
-    echo "Usage: sudo .github/setup-pi-eink.sh --local --display=<4in0e|7in3e>" >&2
+    echo "Usage: sudo scripts/setup-pi-eink.sh --local --display=<4in0e|7in3e>" >&2
     exit 1
 fi
 
@@ -342,6 +342,8 @@ echo "Display configuration saved to ${ENV_FILE}:"
 show_display_configuration
 
 chown "${CURRENT_USER}:${CURRENT_USER}" "${ENV_FILE}"
+
+bash "${SCRIPT_DIR}/setup-pi-wifi.sh"
 
 # 6. Create and enable systemd service for headless startup
 echo "==> [6/6] Installing systemd service (${SERVICE_NAME})..."

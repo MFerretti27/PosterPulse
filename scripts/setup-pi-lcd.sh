@@ -2,10 +2,10 @@
 # ==============================================================================
 # PosterPulse setup for Raspberry Pi OS with an LCD/HDMI display.
 # Usage from a development computer:
-#   bash .github/setup-pi-lcd.sh -ip=10.0.0.119 -user=matt
+#   bash scripts/setup-pi-lcd.sh -ip=10.0.0.119 -user=matt
 #
 # Usage locally on the Pi:
-#   sudo bash .github/setup-pi-lcd.sh --local
+#   sudo bash scripts/setup-pi-lcd.sh --local
 # ==============================================================================
 
 set -euo pipefail
@@ -21,10 +21,10 @@ show_help() {
     cat <<EOF
 Usage:
   Remote setup from a Mac/Linux computer:
-    bash .github/setup-pi-lcd.sh -ip=<PI_IP_ADDRESS> [-user=pi] [-port=22]
+    bash scripts/setup-pi-lcd.sh -ip=<PI_IP_ADDRESS> [-user=pi] [-port=22]
 
   Local setup directly on a Raspberry Pi with a desktop environment:
-    sudo bash .github/setup-pi-lcd.sh --local
+    sudo bash scripts/setup-pi-lcd.sh --local
 
 Options:
   -ip=IP, --ip=IP, -ip IP       Target Pi IP address or hostname
@@ -100,7 +100,7 @@ if [[ -n "$TARGET_IP" ]]; then
 
     echo "==> [3/3] Running setup on remote Raspberry Pi..."
     ssh "${SSH_OPTIONS[@]}" -t -p "$SSH_PORT" "${REMOTE_USER}@${TARGET_IP}" \
-        "cd ~/PosterPulse && sudo bash .github/setup-pi-lcd.sh --local -user=${REMOTE_USER}"
+        "cd ~/PosterPulse && sudo bash scripts/setup-pi-lcd.sh --local -user=${REMOTE_USER}"
     echo ""
     echo "=========================================================="
     echo "  Remote Deployment Complete!"
@@ -186,6 +186,8 @@ set_env_if_missing "REFRESH_SECONDS" "15"
 set_env_if_missing "IDLE_REFRESH_MINUTES" "30"
 set_env_if_missing "FADE_SPEED" "8"
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$ENV_FILE"
+
+bash "${SCRIPT_DIR}/setup-pi-wifi.sh"
 
 # The e-ink service is headless; regular mode must run inside the desktop session.
 echo "==> [4/5] Installing desktop autostart..."

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / ".github" / "setup-pi-lcd.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "setup-pi-lcd.sh"
 
 
 class LcdSetupSshTests(unittest.TestCase):
@@ -93,7 +93,7 @@ class LcdSetupSshTests(unittest.TestCase):
 
     def test_setup_failure_preserves_exit_status_and_cleans_up(self):
         result, commands = self.run_deployment(
-            f"cd ~/PosterPulse && sudo bash .github/{self.script.name} --local -user=matt"
+            f"cd ~/PosterPulse && sudo bash scripts/{self.script.name} --local -user=matt"
             + "".join(f" {arg}" for arg in self.setup_args)
         )
         self.assertEqual(result.returncode, 23)
@@ -118,7 +118,7 @@ class EinkSetupSshTests(LcdSetupSshTests):
     def test_env_transfer_failure_stops_setup_and_cleans_up(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
-            script_dir = repo / ".github"
+            script_dir = repo / "scripts"
             script_dir.mkdir()
             script = script_dir / self.script.name
             script.write_text(self.script.read_text())
