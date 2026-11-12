@@ -193,6 +193,7 @@ In nano, save with **Ctrl+O**, press **Enter**, then exit with **Ctrl+X**. The c
 
 - When configured media is playing, PosterPulse shows the active movie or TV-series poster.
 - When nothing is playing, it rotates through selected movies or matching library posters.
+- Idle rotation favors posters not shown recently, including in top-rated mode, and avoids consecutive repeats when possible. Selection history lasts until PosterPulse restarts.
 - Playback is checked every `REFRESH_SECONDS`. Idle posters (and multiple active playback posters) change every `IDLE_REFRESH_MINUTES`.
 - Regular screens crossfade between posters and advance to the next poster when clicked or tapped.
 - E-ink screens use six-color dithering and sleep between updates to reduce power use and panel refreshes.
