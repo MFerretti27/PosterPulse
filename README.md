@@ -118,16 +118,6 @@ sudo systemctl restart posterpulse
 sudo journalctl -u posterpulse -f
 ```
 
-### Edit settings on the Pi
-
-For the e-ink systemd service, run this from your computer, replacing the username and address with your Pi's details:
-
-```bash
-ssh -t pi@192.168.1.50 'nano ~/PosterPulse/.env && sudo systemctl restart posterpulse && systemctl status posterpulse --no-pager'
-```
-
-In nano, save with **Ctrl+O**, press **Enter**, then exit with **Ctrl+X**. The command restarts PosterPulse after the editor exits so the updated settings take effect, then shows the service status. If PosterPulse is installed elsewhere, adjust the `.env` path.
-
 ### Supported e-ink panels
 
 The panel model, resolution, and power pin must match the hardware:
@@ -188,6 +178,16 @@ These settings do not affect e-ink displays.
 When top-rated movie mode is enabled, it takes precedence over `GENRES`, `EXCLUDED_GENRES`, holiday genres, and `SELECT_MOVIES`. If `COLLECTIONS` is set, it still limits the collection of movies considered.
 
 </details>
+
+## Edit settings on the Pi
+
+For the e-ink systemd service, run this from your computer, replacing the username and address with your Pi's details:
+
+```bash
+ssh -t pi@192.168.1.50 'nano ~/PosterPulse/.env && sudo systemctl restart posterpulse && systemctl status posterpulse --no-pager'
+```
+
+In nano, save with **Ctrl+O**, press **Enter**, then exit with **Ctrl+X**. The command restarts PosterPulse after the editor exits so the updated settings take effect, then shows the service status. If PosterPulse is installed elsewhere, adjust the `.env` path.
 
 ## What to expect
 
