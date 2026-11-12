@@ -311,6 +311,9 @@ class JellyfinClient:
         self.holiday_mode = settings.holiday_mode
         self.holiday_rules = settings.holiday_rules
         self.user_id: str | None = None
+        self._idle_selection_count = 0
+        self._idle_last_selected: dict[str, int] = {}
+        self._last_idle_item_id: str | None = None
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -446,15 +449,35 @@ class JellyfinClient:
                 )
             items = filtered_items
 
-        # Avoid showing the same poster twice in a row when possible.
-        candidates = [item for item in items if item.get("Id") != last_item_id] or items
-        chosen = random.choice(candidates)
+        chosen = self._choose_idle_poster(items, last_item_id)
         item_id = chosen["Id"]
 
         image = self.get_item_poster_image(
             item_id=item_id, max_width=max_width, max_height=max_height
         )
+        self._record_idle_poster(str(item_id))
         return item_id, chosen.get("Name", "Unknown Title"), image
+
+    def _choose_idle_poster(self, items: list[dict], last_item_id: str | None) -> dict:
+        """Favor older selections, capping their age at the current pool size."""
+        previous_id = last_item_id or self._last_idle_item_id
+        candidates = [item for item in items if item.get("Id") != previous_id] or items
+        max_age = len(items)
+        weights = [
+            1
+            + min(
+                self._idle_selection_count
+                - self._idle_last_selected.get(str(item["Id"]), -max_age),
+                max_age,
+            )
+            for item in candidates
+        ]
+        return random.choices(candidates, weights=weights, k=1)[0]
+
+    def _record_idle_poster(self, item_id: str) -> None:
+        self._idle_selection_count += 1
+        self._idle_last_selected[item_id] = self._idle_selection_count
+        self._last_idle_item_id = item_id
 
     def _get_all_items(
         self, url: str, params: dict, *, timeout: int = 15
@@ -570,13 +593,13 @@ class JellyfinClient:
                 message = message.removesuffix(".") + " matching POSTER_TAGS."
             raise RuntimeError(message)
 
-        candidates = [item for item in items if item.get("Id") != last_item_id] or items
-        chosen = random.choice(candidates)
+        chosen = self._choose_idle_poster(items, last_item_id)
         item_id = str(chosen["Id"])
         title = str(chosen.get("Name", "Unknown Title"))
         image = self.get_item_poster_image(
             item_id=item_id, max_width=max_width, max_height=max_height
         )
+        self._record_idle_poster(item_id)
         logger.info(
             "Selected top-rated movie: '%s' (Jellyfin community rating: %s)",
             title,

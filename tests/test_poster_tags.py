@@ -69,7 +69,9 @@ class PosterTagFilterTests(unittest.TestCase):
         )
         client.get_item_poster_image = Mock(return_value="poster-image")
 
-        with patch("main.random.choice", side_effect=lambda items: items[0]):
+        with patch(
+            "main.random.choices", side_effect=lambda items, **kwargs: [items[0]]
+        ):
             result = client.get_top_rated_movie_image(100, 100)
 
         self.assertEqual(result, ("tagged-high", "Tagged High", "poster-image"))
