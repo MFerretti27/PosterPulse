@@ -99,6 +99,48 @@ class WifiRecoveryTests(unittest.TestCase):
                 self.assertFalse(self.state.exists())
         self.assertNotIn("wifi off", self.calls.read_text())
 
+    def test_logs_status_transitions_without_repeating_unchanged_status(self):
+        steps = (
+            (0, {}, "Wi-Fi is disconnected"),
+            (30, {}, ""),
+            (60, {"DEVICES": "wlan0:wifi:connected"}, "Wi-Fi is connected"),
+            (90, {"DEVICES": "wlan0:wifi:connected"}, ""),
+            (120, {"RADIO": "disabled"}, "radio is disabled"),
+            (150, {"RADIO": "disabled"}, ""),
+            (180, {"DEVICES": "wlan0:wifi:unmanaged"}, "No managed Wi-Fi"),
+            (210, {"DEVICES": "wlan0:wifi:unmanaged"}, ""),
+            (240, {}, "Wi-Fi is disconnected"),
+        )
+        for now, env, expected in steps:
+            with self.subTest(now=now):
+                result = self.run_check(now, **env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if expected:
+                    self.assertIn(expected, result.stdout)
+                else:
+                    self.assertEqual(result.stdout, "")
+        self.assertNotIn("wifi off", self.calls.read_text())
+
+    def test_probe_errors_log_once_and_recovery_is_logged(self):
+        for now, env, expected in (
+            (0, {"PROBE_RESULT": "1"}, "Could not read Wi-Fi device state"),
+            (30, {"PROBE_RESULT": "1"}, ""),
+            (60, {"RADIO_RESULT": "1"}, "Could not read Wi-Fi radio state"),
+            (90, {"RADIO_RESULT": "1"}, ""),
+            (120, {}, ""),
+        ):
+            with self.subTest(now=now):
+                result = self.run_check(now, **env)
+                if env:
+                    self.assertNotEqual(result.returncode, 0)
+                    if expected:
+                        self.assertIn(expected, result.stderr)
+                    else:
+                        self.assertEqual(result.stderr, "")
+                else:
+                    self.assertEqual(result.returncode, 0)
+                    self.assertIn("Wi-Fi is disconnected", result.stdout)
+
     def test_stale_invalid_and_rebooted_state_restarts_wait(self):
         for contents in ("0 100\n", "invalid\n", "", "500 600\n"):
             with self.subTest(contents=contents):

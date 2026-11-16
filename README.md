@@ -58,9 +58,20 @@ outages do not trigger recovery. Cycling Wi-Fi briefly interrupts network access
 including SSH. This runs independently of the display app.
 
 View recovery logs with `journalctl -u posterpulse-wifi.service`.
+The watchdog logs connection-state changes, skipped recovery, and recovery attempts;
+it does not repeat unchanged status messages on every check.
 Disable recovery with `sudo systemctl disable --now posterpulse-wifi.timer`.
 Systems without active NetworkManager print a warning and skip installation;
 setup does not replace the network manager.
+
+Both setup scripts also enable persistent system-wide journal logs with a 100 MB
+size target, including routine system messages as well as PosterPulse logs.
+They install `/etc/systemd/journald.conf.d/posterpulse.conf`; other systemd
+configuration may override it. Logs from before persistence was enabled cannot
+be recovered. Use `journalctl --list-boots` to see saved boots and
+`sudo journalctl -b -1 -u posterpulse-wifi.service --no-pager` to inspect the
+previous boot. To remove this configuration, delete the drop-in and restart
+`systemd-journald`; that does not delete existing journal files.
 
 <details>
 <summary>HDMI or LCD screen setup</summary>
@@ -198,6 +209,11 @@ In nano, save with **Ctrl+O**, press **Enter**, then exit with **Ctrl+X**. The c
 - Regular screens crossfade between posters and advance to the next poster when clicked or tapped.
 - E-ink screens use six-color dithering and sleep between updates to reduce power use and panel refreshes.
 - If Jellyfin is unavailable, the app can show recently cached posters.
+- On Linux with NetworkManager, the display shows "Network Disconnected" when no
+  managed Wi-Fi or Ethernet device is connected. The warning clears on reconnection.
+  This checks local network connection state, not router or internet reachability;
+  it does not contact an external service. If NetworkManager is unavailable, the
+  existing Jellyfin connection warning still works.
 
 ## Hardware examples
 

@@ -343,6 +343,7 @@ show_display_configuration
 
 chown "${CURRENT_USER}:${CURRENT_USER}" "${ENV_FILE}"
 
+bash "${SCRIPT_DIR}/setup-pi-logging.sh"
 bash "${SCRIPT_DIR}/setup-pi-wifi.sh"
 
 # 6. Create and enable systemd service for headless startup

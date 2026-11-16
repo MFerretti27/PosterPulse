@@ -55,11 +55,13 @@ class RegularDisplay(BaseDisplay):
         self._tk_image: ImageTk.PhotoImage | None = None
         self._last_displayed_id: str | None = None
         self._last_was_playing = False
+        self._last_was_placeholder = False
         self._last_refresh_time = 0.0
         self._pending_advances = 0
         self._fade_in_progress = False
         self._refresh_after_id: str | None = None
         self._connection_lost = False
+        self._network_disconnected = False
 
         self.root = tk.Tk()
         self.root.configure(bg=self.background_color)
@@ -250,9 +252,14 @@ class RegularDisplay(BaseDisplay):
             )
             item = self.fetch_content_fn(screen_w, screen_h, allow_idle_poster)
             was_connection_lost = self._connection_lost
-            recovered = was_connection_lost and not (item and item.connection_lost)
+            was_network_disconnected = self._network_disconnected
+            self._network_disconnected = bool(item and item.network_disconnected)
+            recovered = (was_connection_lost or was_network_disconnected) and not (
+                item and (item.connection_lost or item.network_disconnected)
+            )
             connection_state_changed = (
                 bool(item and item.connection_lost) != was_connection_lost
+                or self._network_disconnected != was_network_disconnected
             )
             self._connection_lost = bool(item and item.connection_lost)
             self._update_progress_bar(item)
@@ -268,6 +275,7 @@ class RegularDisplay(BaseDisplay):
                 or recovered
                 or connection_state_changed
                 or self._last_displayed_id is None
+                or (self._last_was_placeholder and not item.is_placeholder)
             )
             if (
                 item.is_playing != self._last_was_playing
@@ -283,7 +291,11 @@ class RegularDisplay(BaseDisplay):
                 schedule_next()
                 return
 
-            if item.connection_lost:
+            if item.network_disconnected:
+                self._set_banner_text("Network Disconnected")
+                self._show_top_banner()
+                self.status.place_forget()
+            elif item.connection_lost:
                 self._set_banner_text("Connection Lost")
                 self._show_top_banner()
                 self.status.place_forget()
@@ -303,6 +315,7 @@ class RegularDisplay(BaseDisplay):
             self._current_canvas = new_canvas
             self._last_displayed_id = item.item_id
             self._last_was_playing = item.is_playing
+            self._last_was_placeholder = item.is_placeholder
             self._last_refresh_time = now
             self._fade_in_progress = True
             self._do_fade(old_canvas, new_canvas, 1, schedule_next)

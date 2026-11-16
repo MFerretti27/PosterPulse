@@ -3,9 +3,11 @@ import logging
 import os
 import random
 import re
+import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import TypedDict
 
@@ -21,6 +23,63 @@ logger = logging.getLogger(__name__)
 
 class JellyfinConnectionError(RuntimeError):
     """Raised when Jellyfin responds with an unsuccessful HTTP status."""
+
+
+class NetworkMonitor:
+    """Check NetworkManager's local Wi-Fi and Ethernet device states."""
+
+    def __init__(self) -> None:
+        self.disabled = sys.platform != "linux"
+        self.last_disconnected = False
+
+    def disconnected(self) -> bool:
+        if self.disabled:
+            return self.last_disconnected
+        try:
+            result = subprocess.run(
+                [
+                    "nmcli",
+                    "--terse",
+                    "--escape",
+                    "no",
+                    "--fields",
+                    "TYPE,STATE",
+                    "device",
+                    "status",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=True,
+                env={**os.environ, "LC_ALL": "C"},
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "NetworkManager's nmcli is unavailable; network status cannot be monitored"
+            )
+            self.disabled = True
+            return self.last_disconnected
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning("Could not check local network status: %s", exc)
+            return self.last_disconnected
+
+        devices = [line.partition(":") for line in result.stdout.splitlines()]
+        states = [
+            state
+            for device_type, separator, state in devices
+            if separator
+            and device_type in {"wifi", "ethernet"}
+            and state != "unmanaged"
+        ]
+        if not states:
+            logger.warning(
+                "No managed Wi-Fi or Ethernet devices found; network status is unknown"
+            )
+            return self.last_disconnected
+        self.last_disconnected = not any(
+            state == "connected" or state.startswith("connected (") for state in states
+        )
+        return self.last_disconnected
 
 
 class ActiveMediaSession(TypedDict):
@@ -751,7 +810,12 @@ class JellyfinClient:
 class PosterCoordinator:
     """Coordinates fetching poster data and managing playback/idle rotation state."""
 
-    def __init__(self, client: JellyfinClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        client: JellyfinClient,
+        settings: Settings,
+        network_check: Callable[[], bool] | None = None,
+    ) -> None:
         self.client = client
         self.settings = settings
         self.last_item_id: str | None = None
@@ -762,24 +826,60 @@ class PosterCoordinator:
         self.last_active_rotation_time = 0.0
         self.last_active_session_signature: tuple[tuple[str, str], ...] | None = None
         self.poster_cache = PosterCache(settings.poster_cache_size)
+        self.network_check = network_check
+        self.last_item: PosterDisplayItem | None = None
 
     def fetch_item(
         self, width: int, height: int, allow_idle_poster: bool = True
     ) -> PosterDisplayItem | None:
+        network_disconnected = self.network_check is not None and self.network_check()
         try:
-            return self._fetch_online_item(width, height, allow_idle_poster)
+            item = self._fetch_online_item(
+                width,
+                height,
+                allow_idle_poster
+                or bool(self.last_item and self.last_item.is_placeholder),
+            )
         except (requests.RequestException, JellyfinConnectionError) as exc:
             logger.warning(
                 "Jellyfin connection unavailable; trying poster cache: %s", exc
             )
-            cached_item = self.poster_cache.get_fallback(advance=allow_idle_poster)
-            if cached_item is not None:
+            item = self.poster_cache.get_fallback(advance=allow_idle_poster)
+            if item is not None:
                 logger.info(
                     "Using cached poster while Jellyfin is unavailable: '%s'",
-                    cached_item.title,
+                    item.title,
                 )
-                return cached_item
-            raise
+            elif network_disconnected or self.last_item is not None:
+                item = (
+                    replace(self.last_item, connection_lost=True)
+                    if self.last_item
+                    else PosterDisplayItem(
+                        item_id="connection-lost",
+                        title="Connection Lost",
+                        image=Image.new(
+                            "RGB", (width, height), self.settings.background_color
+                        ),
+                        connection_lost=True,
+                        is_placeholder=True,
+                    )
+                )
+            else:
+                raise
+
+        if item is not None:
+            self.last_item = item
+        elif network_disconnected:
+            item = self.last_item or PosterDisplayItem(
+                item_id="network-disconnected",
+                title="Network Disconnected",
+                image=Image.new("RGB", (width, height), self.settings.background_color),
+                is_placeholder=True,
+            )
+            self.last_item = item
+        if item is not None:
+            return replace(item, network_disconnected=network_disconnected)
+        return None
 
     def _fetch_online_item(
         self, width: int, height: int, allow_idle_poster: bool
@@ -879,7 +979,9 @@ def main() -> int:
         return 1
 
     client = JellyfinClient(settings)
-    coordinator = PosterCoordinator(client, settings)
+    coordinator = PosterCoordinator(
+        client, settings, network_check=NetworkMonitor().disconnected
+    )
 
     display_app: BaseDisplay
     if settings.display_type == "eink":
