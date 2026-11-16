@@ -187,6 +187,7 @@ set_env_if_missing "IDLE_REFRESH_MINUTES" "30"
 set_env_if_missing "FADE_SPEED" "8"
 chown "${CURRENT_USER}:${CURRENT_GROUP}" "$ENV_FILE"
 
+bash "${SCRIPT_DIR}/setup-pi-logging.sh"
 bash "${SCRIPT_DIR}/setup-pi-wifi.sh"
 
 # The e-ink service is headless; regular mode must run inside the desktop session.

@@ -55,6 +55,7 @@ class RegularDisplay(BaseDisplay):
         self._tk_image: ImageTk.PhotoImage | None = None
         self._last_displayed_id: str | None = None
         self._last_was_playing = False
+        self._last_was_placeholder = False
         self._last_refresh_time = 0.0
         self._pending_advances = 0
         self._fade_in_progress = False
@@ -274,6 +275,7 @@ class RegularDisplay(BaseDisplay):
                 or recovered
                 or connection_state_changed
                 or self._last_displayed_id is None
+                or (self._last_was_placeholder and not item.is_placeholder)
             )
             if (
                 item.is_playing != self._last_was_playing
@@ -313,6 +315,7 @@ class RegularDisplay(BaseDisplay):
             self._current_canvas = new_canvas
             self._last_displayed_id = item.item_id
             self._last_was_playing = item.is_playing
+            self._last_was_placeholder = item.is_placeholder
             self._last_refresh_time = now
             self._fade_in_progress = True
             self._do_fade(old_canvas, new_canvas, 1, schedule_next)

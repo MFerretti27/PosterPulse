@@ -834,7 +834,12 @@ class PosterCoordinator:
     ) -> PosterDisplayItem | None:
         network_disconnected = self.network_check is not None and self.network_check()
         try:
-            item = self._fetch_online_item(width, height, allow_idle_poster)
+            item = self._fetch_online_item(
+                width,
+                height,
+                allow_idle_poster
+                or bool(self.last_item and self.last_item.is_placeholder),
+            )
         except (requests.RequestException, JellyfinConnectionError) as exc:
             logger.warning(
                 "Jellyfin connection unavailable; trying poster cache: %s", exc
@@ -845,7 +850,7 @@ class PosterCoordinator:
                     "Using cached poster while Jellyfin is unavailable: '%s'",
                     item.title,
                 )
-            elif network_disconnected:
+            elif network_disconnected or self.last_item is not None:
                 item = (
                     replace(self.last_item, connection_lost=True)
                     if self.last_item
@@ -856,6 +861,7 @@ class PosterCoordinator:
                             "RGB", (width, height), self.settings.background_color
                         ),
                         connection_lost=True,
+                        is_placeholder=True,
                     )
                 )
             else:
@@ -868,7 +874,9 @@ class PosterCoordinator:
                 item_id="network-disconnected",
                 title="Network Disconnected",
                 image=Image.new("RGB", (width, height), self.settings.background_color),
+                is_placeholder=True,
             )
+            self.last_item = item
         if item is not None:
             return replace(item, network_disconnected=network_disconnected)
         return None

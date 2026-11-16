@@ -5,8 +5,20 @@ export LC_ALL=C
 STATE_DIR="${STATE_DIR:-/run/posterpulse-wifi}"
 RECOVERY_DIR="${RECOVERY_DIR:-/var/lib/posterpulse-wifi}"
 STATE_FILE="${STATE_DIR}/disconnected"
+STATUS_FILE="${STATE_DIR}/status"
 RESTORE_FILE="${RECOVERY_DIR}/restore-pending"
 mkdir -p "${STATE_DIR}" "${RECOVERY_DIR}"
+
+report_status() {
+    local status="$1" message="$2" previous=""
+    if [[ -f "${STATUS_FILE}" ]]; then
+        read -r previous < "${STATUS_FILE}" || true
+    fi
+    if [[ "${previous}" != "${status}" ]]; then
+        echo "${message}"
+        printf '%s\n' "${status}" > "${STATUS_FILE}"
+    fi
+}
 
 enable_wifi() {
     nmcli --wait 10 radio wifi on
@@ -26,17 +38,18 @@ fi
 
 if ! radio="$(nmcli --wait 10 radio wifi)"; then
     rm -f "${STATE_FILE}"
-    echo "Could not read Wi-Fi radio state; no recovery attempted." >&2
+    report_status "radio-error" "Could not read Wi-Fi radio state; no recovery attempted." >&2
     exit 1
 fi
 if [[ "${radio}" != "enabled" ]]; then
     rm -f "${STATE_FILE}"
+    report_status "radio-disabled" "Wi-Fi radio is disabled; recovery skipped."
     exit 0
 fi
 
 if ! devices="$(nmcli --wait 10 -t -f DEVICE,TYPE,STATE device status)"; then
     rm -f "${STATE_FILE}"
-    echo "Could not read Wi-Fi device state; no recovery attempted." >&2
+    report_status "device-error" "Could not read Wi-Fi device state; no recovery attempted." >&2
     exit 1
 fi
 has_wifi=false
@@ -44,6 +57,7 @@ while IFS=: read -r device type state; do
     [[ "${type}" == "wifi" ]] || continue
     if [[ "${state}" == connected* ]]; then
         rm -f "${STATE_FILE}"
+        report_status "connected" "Wi-Fi is connected."
         exit 0
     fi
     if [[ "${state}" != "unmanaged" ]]; then
@@ -52,8 +66,11 @@ while IFS=: read -r device type state; do
 done <<< "${devices}"
 if [[ "${has_wifi}" != true ]]; then
     rm -f "${STATE_FILE}"
+    report_status "no-managed-wifi" "No managed Wi-Fi device found; recovery skipped."
     exit 0
 fi
+
+report_status "disconnected" "Wi-Fi is disconnected; waiting five minutes before recovery."
 
 # Uptime avoids clock corrections; a missed monitoring interval restarts the wait.
 read -r uptime _ < /proc/uptime

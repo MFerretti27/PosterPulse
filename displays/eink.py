@@ -47,6 +47,7 @@ class EInkDisplay(BaseDisplay):
         self.last_displayed_id: str | None = None
         self.last_refresh_time: float = 0.0
         self.last_was_playing: bool = False
+        self.last_display_was_placeholder = False
         self.connection_lost = False
         self.last_display_connection_lost = False
         self.last_display_network_disconnected = False
@@ -242,6 +243,7 @@ class EInkDisplay(BaseDisplay):
         self.last_displayed_id = item.item_id
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
+        self.last_display_was_placeholder = item.is_placeholder
         self.last_display_connection_lost = item.connection_lost
         self.last_display_network_disconnected = item.network_disconnected
         if not item.connection_lost:
@@ -297,6 +299,10 @@ class EInkDisplay(BaseDisplay):
                         or item.connection_lost != self.last_display_connection_lost
                         or item.network_disconnected
                         != self.last_display_network_disconnected
+                        or (
+                            self.last_display_was_placeholder
+                            and not item.is_placeholder
+                        )
                     )
 
                     # Condition 1: First render

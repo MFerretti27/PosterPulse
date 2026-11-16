@@ -1,5 +1,5 @@
-import unittest
 import subprocess
+import unittest
 from unittest.mock import Mock, patch
 
 import requests
@@ -110,6 +110,50 @@ class CoordinatorNetworkTests(unittest.TestCase):
         ):
             self.coordinator.fetch_item(10, 10)
 
+    def test_placeholder_is_replaced_as_soon_as_jellyfin_recovers(self):
+        self.check.side_effect = [True, False, False]
+        self.coordinator.client.get_active_media_sessions.side_effect = [
+            requests.ConnectionError("offline"),
+            requests.ConnectionError("server unavailable"),
+            [],
+        ]
+        self.coordinator.client.get_random_poster_image.return_value = (
+            "movie",
+            "Movie",
+            self.item.image,
+        )
+        with self.assertLogs("main", level="WARNING"):
+            first = self.coordinator.fetch_item(10, 10)
+            second = self.coordinator.fetch_item(10, 10, False)
+        self.assertTrue(first.is_placeholder)
+        self.assertTrue(first.network_disconnected)
+        self.assertTrue(second.is_placeholder)
+        self.assertTrue(second.connection_lost)
+        self.assertFalse(second.network_disconnected)
+        recovered = self.coordinator.fetch_item(10, 10, False)
+        self.assertEqual(recovered.item_id, "movie")
+        self.assertFalse(recovered.is_placeholder)
+        self.assertFalse(recovered.connection_lost)
+        self.coordinator.client.get_random_poster_image.assert_called_once()
+
+    def test_connected_server_recovers_even_when_network_remains_disconnected(self):
+        self.check.return_value = True
+        self.coordinator.client.get_active_media_sessions.side_effect = [
+            requests.ConnectionError("offline"),
+            [],
+        ]
+        self.coordinator.client.get_random_poster_image.return_value = (
+            "movie",
+            "Movie",
+            self.item.image,
+        )
+        with self.assertLogs("main", level="WARNING"):
+            self.coordinator.fetch_item(10, 10)
+        recovered = self.coordinator.fetch_item(10, 10, False)
+        self.assertTrue(recovered.network_disconnected)
+        self.assertFalse(recovered.is_placeholder)
+        self.assertEqual(recovered.item_id, "movie")
+
 
 class DisplayNetworkTests(unittest.TestCase):
     def test_regular_shows_and_clears_network_banner_with_same_poster(self):
@@ -169,6 +213,83 @@ class DisplayNetworkTests(unittest.TestCase):
         self.assertTrue(rendered[0].network_disconnected)
         self.assertFalse(rendered[1].network_disconnected)
         self.assertEqual(rendered[1].item_id, "movie")
+
+    def test_offline_startup_recovery_updates_both_displays(self):
+        for kind in ("regular", "eink"):
+            with self.subTest(kind=kind):
+                client = Mock()
+                client.get_active_media_sessions.side_effect = [
+                    requests.ConnectionError("offline"),
+                    requests.ConnectionError("server unavailable"),
+                    [],
+                ]
+                client.get_random_poster_image.return_value = (
+                    "movie",
+                    "Movie",
+                    Image.new("RGB", (10, 10)),
+                )
+                coordinator = PosterCoordinator(
+                    client,
+                    Settings(jellyfin_url="http://local", api_token="token"),
+                    Mock(side_effect=[True, False, False]),
+                )
+                coordinator.poster_cache = Mock()
+                coordinator.poster_cache.get_fallback.return_value = None
+                if kind == "regular":
+                    with (
+                        patch("displays.regular.tk.Tk"),
+                        patch("displays.regular.tk.Label"),
+                        patch("displays.regular.tk.Frame"),
+                        patch.object(RegularDisplay, "_make_banner_image"),
+                    ):
+                        display = RegularDisplay(coordinator.fetch_item)
+                    display.root.winfo_screenwidth.return_value = 10
+                    display.root.winfo_screenheight.return_value = 10
+                    display._set_banner_text = Mock()
+                    display._do_fade = Mock()
+                    with self.assertLogs("main", level="WARNING"):
+                        display.refresh_once()
+                        display.refresh_once()
+                    self.assertEqual(
+                        [
+                            call.args[0]
+                            for call in display._set_banner_text.call_args_list
+                        ],
+                        ["Network Disconnected", "Connection Lost"],
+                    )
+                    display.refresh_once()
+                    self.assertEqual(display._last_displayed_id, "movie")
+                    self.assertFalse(display.banner_visible)
+                else:
+                    with patch.object(EInkDisplay, "_init_driver"):
+                        display = EInkDisplay(
+                            coordinator.fetch_item,
+                            width=100,
+                            height=100,
+                            preview_path=None,
+                        )
+                    display.poll_interval_seconds = 0
+                    rendered = []
+                    original_render = display.render_item
+
+                    def render(item):
+                        rendered.append(item)
+                        if len(rendered) == 3:
+                            display.running = False
+                        return original_render(item)
+
+                    with (
+                        patch("displays.eink.signal.signal"),
+                        patch.object(display, "render_item", side_effect=render),
+                        self.assertLogs("main", level="WARNING"),
+                    ):
+                        display.run()
+                    self.assertEqual(len(rendered), 3)
+                    self.assertTrue(rendered[0].network_disconnected)
+                    self.assertFalse(rendered[1].network_disconnected)
+                    self.assertTrue(rendered[1].connection_lost)
+                    self.assertEqual(rendered[2].item_id, "movie")
+                    self.assertFalse(rendered[2].is_placeholder)
 
 
 if __name__ == "__main__":

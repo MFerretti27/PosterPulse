@@ -14,6 +14,7 @@ class PosterDisplayItem:
     connection_lost: bool = False
     playback_progress: float | None = None
     network_disconnected: bool = False
+    is_placeholder: bool = False
 
 
 class BaseDisplay(abc.ABC):
