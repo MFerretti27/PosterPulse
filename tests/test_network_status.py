@@ -272,7 +272,13 @@ class DisplayNetworkTests(unittest.TestCase):
                     rendered = []
                     original_render = display.render_item
 
-                    def render(item):
+                    def render(
+                        item,
+                        *,
+                        rendered=rendered,
+                        display=display,
+                        original_render=original_render,
+                    ):
                         rendered.append(item)
                         if len(rendered) == 3:
                             display.running = False
