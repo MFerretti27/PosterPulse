@@ -198,6 +198,11 @@ In nano, save with **Ctrl+O**, press **Enter**, then exit with **Ctrl+X**. The c
 - Regular screens crossfade between posters and advance to the next poster when clicked or tapped.
 - E-ink screens use six-color dithering and sleep between updates to reduce power use and panel refreshes.
 - If Jellyfin is unavailable, the app can show recently cached posters.
+- On Linux with NetworkManager, the display shows "Network Disconnected" when no
+  managed Wi-Fi or Ethernet device is connected. The warning clears on reconnection.
+  This checks local network connection state, not router or internet reachability;
+  it does not contact an external service. If NetworkManager is unavailable, the
+  existing Jellyfin connection warning still works.
 
 ## Hardware examples
 

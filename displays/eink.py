@@ -2,6 +2,7 @@ import logging
 import signal
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 from PIL import Image, ImageDraw, ImageFont  # pyright: ignore[reportMissingImports]
 
@@ -48,6 +49,7 @@ class EInkDisplay(BaseDisplay):
         self.last_was_playing: bool = False
         self.connection_lost = False
         self.last_display_connection_lost = False
+        self.last_display_network_disconnected = False
         self.last_good_item: PosterDisplayItem | None = None
         self.hardware_update_failed = False
         self._hardware_failure_count = 0
@@ -119,7 +121,7 @@ class EInkDisplay(BaseDisplay):
         # Put the status strip on the panel's short edge. The E6 is portrait,
         # so its short edge is horizontal; the PhotoPainter is landscape, so
         # its short edge is the vertical strip on the left.
-        if item.is_playing or item.connection_lost:
+        if item.is_playing or item.connection_lost or item.network_disconnected:
             banner_width = 42
             is_portrait_panel = self.height > self.width
             banner_size = (
@@ -130,7 +132,11 @@ class EInkDisplay(BaseDisplay):
             banner = Image.new("RGB", banner_size, (180, 0, 0))
             draw = ImageDraw.Draw(banner)
             label_text = (
-                "Connection Lost" if item.connection_lost else "Currently Playing"
+                "Network Disconnected"
+                if item.network_disconnected
+                else "Connection Lost"
+                if item.connection_lost
+                else "Currently Playing"
             )
             try:
                 font = ImageFont.load_default(size=24)
@@ -237,8 +243,9 @@ class EInkDisplay(BaseDisplay):
         self.last_refresh_time = time.time()
         self.last_was_playing = item.is_playing
         self.last_display_connection_lost = item.connection_lost
+        self.last_display_network_disconnected = item.network_disconnected
         if not item.connection_lost:
-            self.last_good_item = item
+            self.last_good_item = replace(item, network_disconnected=False)
         return True
 
     def run(self) -> None:
@@ -288,6 +295,8 @@ class EInkDisplay(BaseDisplay):
                         self.hardware_update_failed
                         or recovered
                         or item.connection_lost != self.last_display_connection_lost
+                        or item.network_disconnected
+                        != self.last_display_network_disconnected
                     )
 
                     # Condition 1: First render
@@ -328,8 +337,8 @@ class EInkDisplay(BaseDisplay):
                         self.render_item(item)
                 elif (
                     self.last_display_connection_lost
-                    and self.last_good_item is not None
-                ):
+                    or self.last_display_network_disconnected
+                ) and self.last_good_item is not None:
                     # Remove the connection warning while retaining the last poster.
                     self.render_item(self.last_good_item)
             except (OSError, RuntimeError, ValueError):
